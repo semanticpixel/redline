@@ -1,0 +1,37 @@
+{
+  "name": "redline-cli",
+  "version": "0.1.0",
+  "description": "Terminal-native plan annotator for Claude Code. Review, comment, and redline plans without leaving your terminal.",
+  "type": "module",
+  "bin": {
+    "redline": "./dist/bin/index.js"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/bin/index.js"
+  },
+  "keywords": [
+    "claude-code",
+    "plan-mode",
+    "annotation",
+    "terminal",
+    "tui",
+    "code-review"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ink": "^5.1.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^18.3.1",
+    "chalk": "^5.4.1",
+    "clipboardy": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  }
+}
