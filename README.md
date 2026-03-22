@@ -25,6 +25,32 @@ Step 8/15  5 annotations
 u undo last  Enter send feedback  q quit
 ```
 
+## Demo
+
+**Plan loads — all steps visible at a glance**
+![Plan loaded in redline TUI](assets/01-plan-loaded.png)
+
+**Navigate to a step to expand its full content**
+![Step expanded inline](assets/02-step-expanded.png)
+
+**Press `c` to add a comment — type and hit Enter**
+![Typing a comment annotation](assets/03-adding-comment.png)
+
+**Comment saved — badge shows annotation count, text visible inline**
+![Comment saved with badge](assets/04-comment-saved.png)
+
+**`Shift+↑↓` to multi-select steps, then `r` to replace them all at once**
+![Multi-select replace across 4 steps](assets/05-multiselect-replace.png)
+
+**Overview after annotating — badges across 6 steps**
+![Annotations overview](assets/06-annotations-overview.png)
+
+**Press `Enter` — Claude receives your feedback and revises the plan**
+![Claude's revised plan](assets/07-claude-revised-plan.png)
+
+**redline intercepts the revised plan — annotate again or approve**
+![Delete annotation on revised plan](assets/08-delete-annotation.png)
+
 ## Why
 
 Claude Code's plan mode is powerful, but reviewing and giving feedback on plans is painful. You have to read the plan, then type out references to specific steps when you have comments. VS Code extensions solve this with inline annotations, but if you work in the terminal, you're out of luck.
