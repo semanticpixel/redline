@@ -83,15 +83,15 @@ export const PlanStepView: React.FC<Props> = ({
           </Box>
         ))}
 
-      {/* Show multi-line content when active */}
-      {isActive && step.content.split("\n").length > 1 && (
+      {/* Show multi-line content always */}
+      {step.content.split("\n").length > 1 && (
         <Box flexDirection="column" marginLeft={6}>
           {step.content
             .split("\n")
             .slice(1)
             .filter((l) => l.trim())
             .map((line, i) => (
-              <Text key={i} color="gray" dimColor>
+              <Text key={i} color="gray">
                 {"  "}
                 {line}
               </Text>
