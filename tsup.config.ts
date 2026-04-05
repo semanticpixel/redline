@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/bin/index.tsx"],
+  entry: ["src/bin/index.ts"],
   format: ["esm"],
   target: "node20",
   outDir: "dist/bin",
@@ -9,5 +9,4 @@ export default defineConfig({
   banner: {
     js: "#!/usr/bin/env node",
   },
-  external: ["react", "ink", "ink-text-input"],
 });

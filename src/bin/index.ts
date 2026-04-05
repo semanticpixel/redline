@@ -1,12 +1,9 @@
-import React from "react";
-import { render } from "ink";
 import fs from "fs";
-import { App } from "../components/App.js";
+import { startApp } from "../blessed/app.js";
 import { readHookInput } from "../utils/hookIO.js";
 import { parsePlan } from "../utils/parsePlan.js";
 
 async function main() {
-  // Check if we're receiving piped input (hook mode) or demo mode
   const isTTYInput = process.stdin.isTTY;
 
   let planMarkdown: string;
@@ -30,7 +27,7 @@ async function main() {
       process.exit(1);
     }
 
-    // Re-attach stdin to the TTY so Ink can use raw mode for keyboard input.
+    // Re-attach stdin to the TTY so blessed can use raw mode for keyboard input.
     // When piped, process.stdin is the pipe — we need /dev/tty instead.
     try {
       const ttyFd = fs.openSync("/dev/tty", "r");
@@ -55,7 +52,7 @@ async function main() {
     process.exit(1);
   }
 
-  render(<App steps={steps} />);
+  startApp(steps);
 }
 
 const DEMO_PLAN = `# Refactor Authentication Module

@@ -10,7 +10,7 @@ The immediate goal: make redline reliable and pleasant enough to use on every pl
 - [ ] Clear the terminal before rendering (no leftover shell output bleeding through)
 - [ ] Hide the raw command (`cat ... | node ...`) that shows at the top of the iTerm tab
 - [ ] Auto-close the iTerm tab after submit (currently shows `exit` briefly)
-- [ ] Smooth scrolling — when navigating past the viewport edge, scroll by one line instead of jumping
+- [x] Smooth scrolling — when navigating past the viewport edge, scroll by one line instead of jumping
 - [ ] Wrap long lines instead of truncating — some plan steps have full paragraphs
 - [ ] Syntax highlighting for code blocks inside plan steps (fence detection + chalk coloring)
 - [ ] Show a confirmation flash ("✓ Feedback sent" / "✓ Approved") before the tab closes
