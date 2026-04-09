@@ -1,5 +1,5 @@
 import fs from "fs";
-import { startApp } from "../ansi/app.js";
+import { startApp } from "../engine/startApp.js";
 import { readHookInput } from "../utils/hookIO.js";
 import { parsePlan } from "../utils/parsePlan.js";
 
@@ -27,8 +27,8 @@ async function main() {
       process.exit(1);
     }
 
-    // Re-attach stdin to the TTY so blessed can use raw mode for keyboard input.
-    // When piped, process.stdin is the pipe — we need /dev/tty instead.
+    // Re-attach stdin to the TTY so the fullscreen renderer can use raw mode
+    // for keyboard input after the hook payload has already been read from the pipe.
     try {
       const ttyFd = fs.openSync("/dev/tty", "r");
       const ttyStream = new (await import("tty")).ReadStream(ttyFd);
@@ -52,7 +52,7 @@ async function main() {
     process.exit(1);
   }
 
-  startApp(steps);
+  await startApp(steps);
 }
 
 const DEMO_PLAN = `# Refactor Authentication Module
