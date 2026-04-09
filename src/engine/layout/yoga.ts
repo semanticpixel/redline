@@ -1,5 +1,6 @@
 import Yoga from "yoga-layout";
 import type { MiniNode } from "../dom.js";
+import { getNodeText } from "../dom.js";
 
 export function attachYogaNode(node: MiniNode): void {
   if (node.type === "mini-text" || node.type === "raw-text") {
@@ -7,7 +8,7 @@ export function attachYogaNode(node: MiniNode): void {
     yogaNode.setMeasureFunc((width: number, widthMode: number) => {
       const wrapWidth =
         widthMode === Yoga.MEASURE_MODE_UNDEFINED ? undefined : Math.max(1, Math.floor(width));
-      const lines = wrapText(node.text, wrapWidth);
+      const lines = wrapText(getNodeText(node), wrapWidth);
       const measuredWidth =
         wrapWidth === undefined
           ? Math.max(1, ...lines.map((line) => line.length), 1)

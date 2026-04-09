@@ -7,8 +7,10 @@ import {
   insertBeforeNode,
   markDirty,
   removeChildNode,
+  setSegments,
   setStyle,
   setText,
+  type MiniTextSegment,
   type MiniNode,
   type MiniRootNode,
 } from "./dom.js";
@@ -17,6 +19,7 @@ import { applyYogaStyle, attachYogaNode } from "./layout/yoga.js";
 type Props = {
   style?: Record<string, unknown>;
   text?: string;
+  segments?: MiniTextSegment[];
 };
 
 export const reconciler = Reconciler({
@@ -34,6 +37,9 @@ export const reconciler = Reconciler({
     setStyle(node, (props.style ?? {}) as never);
     if (typeof props.text === "string") {
       setText(node, props.text);
+    }
+    if (Array.isArray(props.segments)) {
+      setSegments(node, props.segments);
     }
     return node;
   },
@@ -55,6 +61,9 @@ export const reconciler = Reconciler({
     setStyle(instance, (newProps.style ?? {}) as never);
     if (typeof newProps.text === "string") {
       setText(instance, newProps.text);
+    }
+    if (Array.isArray(newProps.segments)) {
+      setSegments(instance, newProps.segments);
     }
     applyYogaStyle(instance);
     markDirty(instance);

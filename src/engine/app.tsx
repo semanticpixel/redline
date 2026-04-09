@@ -12,13 +12,19 @@ type Props = {
   onQuit: () => void;
 };
 
-type RenderedRow = {
-  key: string;
+type Color = "white" | "yellow" | "cyan" | "red" | "green" | "gray" | "blue";
+
+type Segment = {
   text: string;
-  color?: "white" | "yellow" | "cyan" | "red" | "green" | "gray";
+  color?: Color;
   backgroundColor?: "blue";
   bold?: boolean;
   dim?: boolean;
+};
+
+type RenderedRow = {
+  key: string;
+  segments: Segment[];
 };
 
 type RowLayout = {
@@ -235,26 +241,24 @@ export default function RedlineApp({
     <AlternateScreen>
       <Box flexDirection="column" height={size.rows} backgroundColor="black">
         <Box height={HEADER_HEIGHT} paddingX={1} flexShrink={0} backgroundColor="black">
-          <Text color="red" bold>
-            ▌ redline
-          </Text>
-          <Text color="gray">{truncate(planTitle, contentWidth)}</Text>
+          <InlineTextLine
+            segments={[
+              { text: "▌ ", color: "red", bold: true },
+              { text: "redline", color: "red", bold: true },
+              { text: " — plan review", color: "gray", dim: true },
+            ]}
+          />
           <Text color="gray" dim>
-            {"j/k or arrows move  Shift+arrows select  c ? d r annotate  Enter submit  q quit"}
+            {truncate(planTitle, contentWidth)}
+          </Text>
+          <Text color="gray" dim>
+            {"─".repeat(contentWidth)}
           </Text>
         </Box>
 
         <Box height={bodyHeight} paddingX={1} flexShrink={0} backgroundColor="black">
           {visibleRows.map((row) => (
-            <Text
-              key={row.key}
-              color={row.color}
-              backgroundColor={row.backgroundColor}
-              bold={row.bold}
-              dim={row.dim}
-            >
-              {row.text}
-            </Text>
+            <InlineTextLine key={row.key} segments={row.segments} />
           ))}
           {Array.from({ length: Math.max(0, bodyHeight - visibleRows.length) }, (_, index) => (
             <Text key={`blank-${index}`} color="gray">
@@ -265,40 +269,92 @@ export default function RedlineApp({
 
         {isAnnotating ? (
           <Box height={ANNOTATION_FOOTER_HEIGHT} paddingX={1} flexShrink={0} backgroundColor="black">
-            <Text color={TYPE_COLORS[annotationType]} bold>
-              {`${TYPE_LABELS[annotationType]}${selectedCount > 1 ? ` (${selectedCount} steps)` : ` on step ${activeIndex + 1}`}`}
-            </Text>
-            <Text color="white">{truncate(`> ${inputValue}█`, contentWidth)}</Text>
-            <Text color="gray">Enter save  Esc cancel</Text>
             <Text color="gray" dim>
-              {truncate(steps[activeIndex]?.content.split("\n")[0] ?? "", contentWidth)}
+              {"─".repeat(contentWidth)}
             </Text>
+            <InlineTextLine
+              segments={[
+                { text: `${TYPE_ICONS[annotationType]} `, color: TYPE_COLORS[annotationType], bold: true },
+                {
+                  text: `${TYPE_LABELS[annotationType]}${selectedCount > 1 ? ` (${selectedCount} steps)` : ` on step ${activeIndex + 1}`}`,
+                  color: TYPE_COLORS[annotationType],
+                  bold: true,
+                },
+              ]}
+            />
+            <Text color="white">{truncate(`> ${inputValue}█`, contentWidth)}</Text>
+            <InlineTextLine
+              segments={[
+                { text: "Enter", color: "green", bold: true },
+                { text: " save  ", color: "gray" },
+                { text: "Esc", color: "gray", bold: true },
+                { text: " cancel", color: "gray" },
+              ]}
+            />
           </Box>
         ) : (
           <Box height={REVIEW_FOOTER_HEIGHT} paddingX={1} flexShrink={0} backgroundColor="black">
             <Text color="gray" dim>
-              {buildStatusLine({
-                activeIndex,
-                totalSteps: steps.length,
-                selectedCount,
-                totalAnnotations,
-                scrollOffset: nextScrollOffset,
-                maxScroll: Math.max(0, rowLayout.rows.length - bodyHeight),
-              })}
+              {"─".repeat(contentWidth)}
             </Text>
-            <Text color="gray">
-              {"↑↓ navigate  Shift+↑↓ select  c comment  ? question  d delete  r replace"}
-            </Text>
-            <Text color="gray">{`u undo  Enter ${totalAnnotations > 0 ? "send feedback" : "approve"}  q quit`}</Text>
-            <Text color="gray" dim>
-              {viewportCounts.above > 0 || viewportCounts.below > 0
-                ? `${viewportCounts.above > 0 ? `↑ ${viewportCounts.above} above` : ""}${viewportCounts.above > 0 && viewportCounts.below > 0 ? "  " : ""}${viewportCounts.below > 0 ? `↓ ${viewportCounts.below} below` : ""}`
-                : "all steps visible"}
-            </Text>
+            <InlineTextLine
+              segments={alignRight(
+                buildStatusSegments({
+                  activeIndex,
+                  totalSteps: steps.length,
+                  selectedCount,
+                  totalAnnotations,
+                }),
+                buildViewportSegments(viewportCounts),
+                contentWidth,
+              )}
+            />
+            <InlineTextLine
+              segments={[
+                { text: "↑↓", color: "white", bold: true },
+                { text: " navigate  ", color: "gray" },
+                { text: "Shift+↑↓", color: "blue", bold: true },
+                { text: " select  ", color: "gray" },
+                { text: "c", color: "yellow", bold: true },
+                { text: " comment  ", color: "gray" },
+                { text: "?", color: "cyan", bold: true },
+                { text: " question  ", color: "gray" },
+                { text: "d", color: "red", bold: true },
+                { text: " delete  ", color: "gray" },
+                { text: "r", color: "green", bold: true },
+                { text: " replace", color: "gray" },
+              ]}
+            />
+            <InlineTextLine
+              segments={[
+                { text: "u", color: "white", bold: true },
+                { text: " undo  ", color: "gray" },
+                { text: "Enter", color: "green", bold: true },
+                { text: ` ${totalAnnotations > 0 ? "send feedback" : "approve"}  `, color: "gray" },
+                { text: "q", color: "gray", bold: true },
+                { text: " quit", color: "gray" },
+              ]}
+            />
           </Box>
         )}
       </Box>
     </AlternateScreen>
+  );
+}
+
+function InlineTextLine({ segments }: { segments: Segment[] }): React.ReactNode {
+  return (
+    <Text
+      segments={segments.map((segment) => ({
+        text: segment.text,
+        style: {
+          color: segment.color,
+          backgroundColor: segment.backgroundColor,
+          bold: segment.bold,
+          dim: segment.dim,
+        },
+      }))}
+    />
   );
 }
 
@@ -319,14 +375,15 @@ function computeRows(
     const active = index === activeIndex;
     const selected = isSelected(index, activeIndex, selectionAnchor);
     const highlighted = active || selected;
+    const backgroundColor = selected && !active ? "blue" : undefined;
     const hasAnnotations = step.annotations.length > 0;
     const hasDelete = step.annotations.some((annotation) => annotation.type === "delete");
     const firstLine = step.content.split("\n")[0] ?? "";
     const bodyLines = step.content.split("\n").slice(1).filter((line) => line.trim().length > 0);
     const isHeading = /^#{1,6}\s/.test(firstLine);
-    const prefix = `${selected && !active ? "┃" : " "} ${String(index + 1).padStart(gutterWidth, " ")} ${active ? "▸" : " "} `;
-    const continuationPrefix = " ".repeat(prefix.length);
-    const availableWidth = Math.max(1, width - prefix.length);
+    const prefixLength = 2 + gutterWidth + 1 + 2;
+    const prefixPadding = " ".repeat(prefixLength);
+    const availableWidth = Math.max(1, width - prefixLength);
     const firstLineSuffix = hasAnnotations ? ` [${step.annotations.length}]` : "";
     const titleLines = wrapText(firstLine, Math.max(1, availableWidth - firstLineSuffix.length));
 
@@ -334,27 +391,65 @@ function computeRows(
     const startLength = rows.length;
 
     titleLines.forEach((line, lineIndex) => {
-      const text = `${lineIndex === 0 ? prefix : continuationPrefix}${line}${lineIndex === 0 ? firstLineSuffix : ""}`;
-      rows.push({
-        key: `step-${step.id}-title-${lineIndex}`,
-        text,
-        color: hasDelete ? "red" : highlighted ? "white" : isHeading ? "cyan" : "yellow",
-        backgroundColor: highlighted ? "blue" : undefined,
+      const segments: Segment[] = [];
+      if (lineIndex === 0) {
+        segments.push({
+          text: selected && !active ? "┃ " : "  ",
+          color: selected && !active ? "blue" : undefined,
+          bold: selected && !active,
+        });
+        segments.push({
+          text: `${String(index + 1).padStart(gutterWidth, " ")} `,
+          color: active ? "yellow" : "gray",
+          dim: !active,
+        });
+        segments.push({
+          text: active ? "▸ " : "  ",
+          color: active ? "red" : undefined,
+          bold: active,
+        });
+      } else {
+        segments.push({ text: prefixPadding });
+      }
+
+      segments.push({
+        text: line,
+        color: hasDelete ? "red" : highlighted ? "white" : isHeading ? "cyan" : "gray",
+        backgroundColor,
         bold: active || isHeading,
         dim: !highlighted && !isHeading,
+      });
+
+      if (lineIndex === 0 && hasAnnotations) {
+        segments.push({
+          text: firstLineSuffix,
+          color: "red",
+          backgroundColor,
+          bold: true,
+        });
+      }
+
+      rows.push({
+        key: `step-${step.id}-title-${lineIndex}`,
+        segments,
       });
     });
 
     if (bodyLines.length > 0) {
       for (const [lineIndex, line] of bodyLines.entries()) {
-        const wrapped = wrapText(line.trim(), Math.max(1, width - 4));
+        const wrapped = wrapText(line.trim(), Math.max(1, width - (prefixLength + 2)));
         wrapped.forEach((chunk, chunkIndex) => {
           rows.push({
             key: `step-${step.id}-body-${lineIndex}-${chunkIndex}`,
-            text: `    ${chunk}`,
-            color: hasDelete ? "red" : highlighted ? "white" : "gray",
-            backgroundColor: highlighted ? "blue" : undefined,
-            dim: !highlighted,
+            segments: [
+              { text: `${prefixPadding}  ` },
+              {
+                text: chunk,
+                color: hasDelete ? "red" : highlighted ? "white" : "gray",
+                backgroundColor,
+                dim: !highlighted,
+              },
+            ],
           });
         });
       }
@@ -364,15 +459,26 @@ function computeRows(
       step.annotations.forEach((annotation, annotationIndex) => {
         const wrapped = wrapText(
           `${TYPE_ICONS[annotation.type]} ${annotation.text}`,
-          Math.max(1, width - 6),
+          Math.max(1, width - (prefixLength + 4)),
         );
         wrapped.forEach((chunk, chunkIndex) => {
           rows.push({
             key: `step-${step.id}-annotation-${annotationIndex}-${chunkIndex}`,
-            text: `    │ ${chunk}`,
-            color: TYPE_COLORS[annotation.type],
-            backgroundColor: highlighted ? "blue" : undefined,
-            dim: !highlighted,
+            segments: [
+              { text: `${prefixPadding}  ` },
+              {
+                text: chunkIndex === 0 ? "│ " : "  ",
+                color: highlighted ? "red" : "gray",
+                backgroundColor,
+                dim: !highlighted,
+              },
+              {
+                text: chunk,
+                color: TYPE_COLORS[annotation.type],
+                backgroundColor,
+                dim: !highlighted,
+              },
+            ],
           });
         });
       });
@@ -577,30 +683,68 @@ function undoLastAnnotation(steps: PlanStep[], selectedIndices: number[]): PlanS
   });
 }
 
-function buildStatusLine({
+function buildStatusSegments({
   activeIndex,
   totalSteps,
   selectedCount,
   totalAnnotations,
-  scrollOffset,
-  maxScroll,
 }: {
   activeIndex: number;
   totalSteps: number;
   selectedCount: number;
   totalAnnotations: number;
-  scrollOffset: number;
-  maxScroll: number;
-}): string {
-  const parts = [`step ${activeIndex + 1}/${totalSteps}`];
+}): Segment[] {
+  const segments: Segment[] = [{ text: `Step ${activeIndex + 1}/${totalSteps}`, color: "gray" }];
+
   if (selectedCount > 1) {
-    parts.push(`${selectedCount} selected`);
+    segments.push({ text: "  " });
+    segments.push({ text: `${selectedCount} selected`, color: "blue", bold: true });
   }
+
   if (totalAnnotations > 0) {
-    parts.push(`${totalAnnotations} annotation${totalAnnotations === 1 ? "" : "s"}`);
+    segments.push({ text: "  " });
+    segments.push({
+      text: `${totalAnnotations} annotation${totalAnnotations === 1 ? "" : "s"}`,
+      color: "red",
+      bold: true,
+    });
   }
-  parts.push(`scroll ${scrollOffset}/${maxScroll}`);
-  return parts.join("  |  ");
+
+  return segments;
+}
+
+function buildViewportSegments(viewportCounts: { above: number; below: number }): Segment[] {
+  if (viewportCounts.above === 0 && viewportCounts.below === 0) {
+    return [];
+  }
+
+  const segments: Segment[] = [];
+  if (viewportCounts.above > 0) {
+    segments.push({ text: `↑ ${viewportCounts.above} above`, color: "gray", dim: true });
+  }
+  if (viewportCounts.above > 0 && viewportCounts.below > 0) {
+    segments.push({ text: "  " });
+  }
+  if (viewportCounts.below > 0) {
+    segments.push({ text: `↓ ${viewportCounts.below} below`, color: "gray", dim: true });
+  }
+
+  return segments;
+}
+
+function alignRight(left: Segment[], right: Segment[], width: number): Segment[] {
+  if (right.length === 0) {
+    return left;
+  }
+
+  const leftWidth = measureSegments(left);
+  const rightWidth = measureSegments(right);
+  const spaces = Math.max(2, width - leftWidth - rightWidth);
+  return [...left, { text: " ".repeat(spaces) }, ...right];
+}
+
+function measureSegments(segments: Segment[]): number {
+  return segments.reduce((sum, segment) => sum + segment.text.length, 0);
 }
 
 function truncate(text: string, width: number): string {

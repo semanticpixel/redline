@@ -25,6 +25,11 @@ export interface MiniStyle {
   dim?: boolean;
 }
 
+export interface MiniTextSegment {
+  text: string;
+  style?: Pick<MiniStyle, "color" | "backgroundColor" | "bold" | "dim">;
+}
+
 export interface LayoutBox {
   x: number;
   y: number;
@@ -38,6 +43,7 @@ export interface MiniNode {
   children: MiniNode[];
   style: MiniStyle;
   text: string;
+  segments: MiniTextSegment[];
   yogaNode: any | null;
   layout: LayoutBox;
   dirty: boolean;
@@ -64,6 +70,7 @@ export function createRootNode(
     children: [],
     style: { flexDirection: "column", flexGrow: 1, flexShrink: 0 },
     text: "",
+    segments: [],
     yogaNode: null,
     layout: { x: 0, y: 0, width: 0, height: 0 },
     dirty: true,
@@ -84,6 +91,7 @@ export function createNode(type: MiniNodeType): MiniNode {
     children: [],
     style: {},
     text: "",
+    segments: [],
     yogaNode: null,
     layout: { x: 0, y: 0, width: 0, height: 0 },
     dirty: true,
@@ -139,7 +147,21 @@ export function setStyle(node: MiniNode, style: MiniStyle): void {
 
 export function setText(node: MiniNode, text: string): void {
   node.text = text;
+  node.segments = [];
   markDirty(node);
+}
+
+export function setSegments(node: MiniNode, segments: MiniTextSegment[]): void {
+  node.segments = segments;
+  node.text = segments.map((segment) => segment.text).join("");
+  markDirty(node);
+}
+
+export function getNodeText(node: MiniNode): string {
+  if (node.segments.length > 0) {
+    return node.segments.map((segment) => segment.text).join("");
+  }
+  return node.text;
 }
 
 export function markDirty(node: MiniNode | null): void {

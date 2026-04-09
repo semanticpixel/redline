@@ -1,4 +1,5 @@
 import type { MiniNode } from "./dom.js";
+import { getNodeText } from "./dom.js";
 import type { CellStyle } from "./screen.js";
 import { StylePool, createScreen } from "./screen.js";
 import Output from "./output.js";
@@ -79,8 +80,24 @@ function renderNode(
   }
 
   if (node.type === "mini-text" || node.type === "raw-text") {
+    const fullText = getNodeText(node);
+    const lines = wrapText(fullText, Math.max(1, node.layout.width));
+    if (node.segments.length > 0 && lines.length <= 1) {
+      let cursorX = x;
+      for (const segment of node.segments) {
+        const segmentStyle = mergeTextStyle(textStyle, segment.style ?? {});
+        const styleId = stylePool.intern(segmentStyle);
+        output.write(cursorX, y, segment.text.slice(0, Math.max(0, node.layout.width - (cursorX - x))), styleId);
+        cursorX += segment.text.length;
+        if (cursorX >= x + node.layout.width) {
+          break;
+        }
+      }
+      node.dirty = false;
+      return;
+    }
+
     const styleId = stylePool.intern(textStyle);
-    const lines = wrapText(node.text, Math.max(1, node.layout.width));
     for (let index = 0; index < Math.min(lines.length, node.layout.height); index++) {
       const line = lines[index] ?? "";
       output.write(x, y + index, line.slice(0, node.layout.width), styleId);
