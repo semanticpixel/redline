@@ -1,5 +1,5 @@
 import fs from "fs";
-import { startApp } from "../blessed/app.js";
+import { startApp } from "../ansi/app.js";
 import { readHookInput } from "../utils/hookIO.js";
 import { parsePlan } from "../utils/parsePlan.js";
 
