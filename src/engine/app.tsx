@@ -458,7 +458,7 @@ function computeRows(
     if (hasAnnotations) {
       step.annotations.forEach((annotation, annotationIndex) => {
         const wrapped = wrapText(
-          `${TYPE_ICONS[annotation.type]} ${annotation.text}`,
+          formatAnnotationInline(annotation),
           Math.max(1, width - (prefixLength + 4)),
         );
         wrapped.forEach((chunk, chunkIndex) => {
@@ -711,6 +711,11 @@ function buildStatusSegments({
   }
 
   return segments;
+}
+
+function formatAnnotationInline(annotation: Annotation): string {
+  const spacer = annotation.type === "delete" ? "  " : " ";
+  return `${TYPE_ICONS[annotation.type]}${spacer}${annotation.text}`;
 }
 
 function buildViewportSegments(viewportCounts: { above: number; below: number }): Segment[] {
