@@ -9,4 +9,7 @@ export default defineConfig({
   banner: {
     js: "#!/usr/bin/env node",
   },
+  // Bundle the React runtime and reconciler so the ESM build does not emit
+  // dynamic `require("react")` calls under Node 22.
+  noExternal: ["react", "react-dom", "react-reconciler", "scheduler"],
 });
