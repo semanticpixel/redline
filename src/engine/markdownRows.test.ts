@@ -82,6 +82,38 @@ function rowTexts(rows: RenderedRow[]): string[] {
 
 {
   const layout = computeMarkdownRows(
+    [step("Paragraph with compatibility preserved across wrapping.")],
+    0,
+    null,
+    27,
+  );
+  const text = rowTexts(layout.rows).join("\n");
+
+  assert.doesNotMatch(text, /c\n\s*ompatibility/);
+  assert.match(text, /compatibility/);
+}
+
+{
+  const layout = computeMarkdownRows(
+    [step("Inactive `yellowCode` should stay dim.")],
+    1,
+    null,
+    80,
+  );
+  const firstRow = layout.rows[0]!;
+
+  assert.ok(
+    firstRow.segments.some(
+      (segment) =>
+        segment.text.includes("yellowCode") &&
+        segment.color === "yellow" &&
+        segment.dim,
+    ),
+  );
+}
+
+{
+  const layout = computeMarkdownRows(
     [step("- Selectable bullet\n\nContinuation paragraph")],
     0,
     null,
