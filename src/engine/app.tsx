@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useState } from "react";
 import type { Annotation, PlanStep } from "../types.js";
 import { AlternateScreen } from "./components/AlternateScreen.js";
 import Box from "./components/Box.js";
+import { Divider } from "./components/Divider.js";
 import Text from "./components/Text.js";
 import { useInput } from "./hooks/useInput.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
@@ -221,23 +222,21 @@ export default function RedlineApp({
   return (
     <AlternateScreen>
       <Box flexDirection="column" height={size.rows} backgroundColor="black">
-        <Box height={HEADER_HEIGHT} paddingX={1} flexShrink={0} backgroundColor="black">
+        <Box paddingX={1} flexShrink={0}>
           <InlineTextLine
             segments={[
               { text: "▌ ", color: "red", bold: true },
               { text: "redline", color: "red", bold: true },
-              { text: " — plan review", color: "gray", dim: true },
+              { text: " — plan review", color: "gray", dim: false },
             ]}
           />
-          <Text color="gray" dim>
+          <Text color="blue">
             {truncate(planTitle, contentWidth)}
           </Text>
-          <Text color="gray" dim>
-            {"─".repeat(contentWidth)}
-          </Text>
         </Box>
+        <Divider color="cyan" dim />
 
-        <Box height={bodyHeight} paddingX={1} flexShrink={0} backgroundColor="black">
+        <Box height={bodyHeight} paddingX={0} flexShrink={0}>
           {visibleRows.map((row) => (
             <InlineTextLine key={row.key} segments={row.segments} />
           ))}
@@ -248,11 +247,10 @@ export default function RedlineApp({
           ))}
         </Box>
 
+        <Divider color="yellow" dim />
+
         {isAnnotating ? (
-          <Box height={ANNOTATION_FOOTER_HEIGHT} paddingX={1} flexShrink={0} backgroundColor="black">
-            <Text color="gray" dim>
-              {"─".repeat(contentWidth)}
-            </Text>
+          <Box paddingX={1} flexShrink={0} >
             <InlineTextLine
               segments={[
                 { text: `${TYPE_ICONS[annotationType]} `, color: TYPE_COLORS[annotationType], bold: true },
@@ -274,10 +272,7 @@ export default function RedlineApp({
             />
           </Box>
         ) : (
-          <Box height={REVIEW_FOOTER_HEIGHT} paddingX={1} flexShrink={0} backgroundColor="black">
-            <Text color="gray" dim>
-              {"─".repeat(contentWidth)}
-            </Text>
+          <Box paddingX={1} flexShrink={0}>
             <InlineTextLine
               segments={alignRight(
                 buildStatusSegments({
