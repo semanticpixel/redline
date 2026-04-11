@@ -5,32 +5,13 @@ import Box from "./components/Box.js";
 import Text from "./components/Text.js";
 import { useInput } from "./hooks/useInput.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
+import { computeMarkdownRows } from "./markdownRows.js";
+import type { RowLayout, Segment } from "./renderTypes.js";
 
 type Props = {
   initialSteps: PlanStep[];
   onSubmit: (steps: PlanStep[]) => void;
   onQuit: () => void;
-};
-
-type Color = "white" | "yellow" | "cyan" | "red" | "green" | "gray" | "blue";
-
-type Segment = {
-  text: string;
-  color?: Color;
-  backgroundColor?: "blue";
-  bold?: boolean;
-  dim?: boolean;
-};
-
-type RenderedRow = {
-  key: string;
-  segments: Segment[];
-};
-
-type RowLayout = {
-  rows: RenderedRow[];
-  stepStartRow: number[];
-  stepRowCount: number[];
 };
 
 const TYPE_COLORS: Record<Annotation["type"], "yellow" | "cyan" | "red" | "green"> = {
@@ -76,7 +57,7 @@ export default function RedlineApp({
   const bodyHeight = Math.max(1, size.rows - HEADER_HEIGHT - footerHeight);
   const contentWidth = Math.max(12, size.columns - 2);
   const selectedIndices = getSelectedIndices(activeIndex, selectionAnchor);
-  const rowLayout = computeRows(steps, activeIndex, selectionAnchor, contentWidth);
+  const rowLayout = computeMarkdownRows(steps, activeIndex, selectionAnchor, contentWidth);
   const nextScrollOffset = ensureActiveVisible({
     activeIndex,
     bodyHeight,
@@ -358,171 +339,6 @@ function InlineTextLine({ segments }: { segments: Segment[] }): React.ReactNode 
   );
 }
 
-function computeRows(
-  steps: PlanStep[],
-  activeIndex: number,
-  selectionAnchor: number | null,
-  width: number,
-): RowLayout {
-  const rows: RenderedRow[] = [];
-  const stepStartRow: number[] = [];
-  const stepRowCount: number[] = [];
-  const totalSteps = steps.length;
-  const gutterWidth = String(totalSteps).length;
-
-  for (let index = 0; index < totalSteps; index++) {
-    const step = steps[index]!;
-    const active = index === activeIndex;
-    const selected = isSelected(index, activeIndex, selectionAnchor);
-    const highlighted = active || selected;
-    const backgroundColor = selected && !active ? "blue" : undefined;
-    const hasAnnotations = step.annotations.length > 0;
-    const hasDelete = step.annotations.some((annotation) => annotation.type === "delete");
-    const firstLine = step.content.split("\n")[0] ?? "";
-    const bodyLines = step.content.split("\n").slice(1).filter((line) => line.trim().length > 0);
-    const isHeading = /^#{1,6}\s/.test(firstLine);
-    const prefixLength = 2 + gutterWidth + 1 + 2;
-    const prefixPadding = " ".repeat(prefixLength);
-    const availableWidth = Math.max(1, width - prefixLength);
-    const firstLineSuffix = hasAnnotations ? ` [${step.annotations.length}]` : "";
-    const titleLines = wrapText(firstLine, Math.max(1, availableWidth - firstLineSuffix.length));
-
-    stepStartRow.push(rows.length);
-    const startLength = rows.length;
-
-    titleLines.forEach((line, lineIndex) => {
-      const segments: Segment[] = [];
-      if (lineIndex === 0) {
-        segments.push({
-          text: selected && !active ? "┃ " : "  ",
-          color: selected && !active ? "blue" : undefined,
-          bold: selected && !active,
-        });
-        segments.push({
-          text: `${String(index + 1).padStart(gutterWidth, " ")} `,
-          color: active ? "yellow" : "gray",
-          dim: !active,
-        });
-        segments.push({
-          text: active ? "▸ " : "  ",
-          color: active ? "red" : undefined,
-          bold: active,
-        });
-      } else {
-        segments.push({ text: prefixPadding });
-      }
-
-      segments.push({
-        text: line,
-        color: hasDelete ? "red" : highlighted ? "white" : isHeading ? "cyan" : "gray",
-        backgroundColor,
-        bold: active || isHeading,
-        dim: !highlighted && !isHeading,
-      });
-
-      if (lineIndex === 0 && hasAnnotations) {
-        segments.push({
-          text: firstLineSuffix,
-          color: "red",
-          backgroundColor,
-          bold: true,
-        });
-      }
-
-      rows.push({
-        key: `step-${step.id}-title-${lineIndex}`,
-        segments,
-      });
-    });
-
-    if (bodyLines.length > 0) {
-      for (const [lineIndex, line] of bodyLines.entries()) {
-        const wrapped = wrapText(line.trim(), Math.max(1, width - (prefixLength + 2)));
-        wrapped.forEach((chunk, chunkIndex) => {
-          rows.push({
-            key: `step-${step.id}-body-${lineIndex}-${chunkIndex}`,
-            segments: [
-              { text: `${prefixPadding}  ` },
-              {
-                text: chunk,
-                color: hasDelete ? "red" : highlighted ? "white" : "gray",
-                backgroundColor,
-                dim: !highlighted,
-              },
-            ],
-          });
-        });
-      }
-    }
-
-    if (hasAnnotations) {
-      step.annotations.forEach((annotation, annotationIndex) => {
-        const wrapped = wrapText(
-          formatAnnotationInline(annotation),
-          Math.max(1, width - (prefixLength + 4)),
-        );
-        wrapped.forEach((chunk, chunkIndex) => {
-          rows.push({
-            key: `step-${step.id}-annotation-${annotationIndex}-${chunkIndex}`,
-            segments: [
-              { text: `${prefixPadding}  ` },
-              {
-                text: chunkIndex === 0 ? "│ " : "  ",
-                color: highlighted ? "red" : "gray",
-                backgroundColor,
-                dim: !highlighted,
-              },
-              {
-                text: chunk,
-                color: TYPE_COLORS[annotation.type],
-                backgroundColor,
-                dim: !highlighted,
-              },
-            ],
-          });
-        });
-      });
-    }
-
-    stepRowCount.push(rows.length - startLength);
-  }
-
-  return {
-    rows,
-    stepStartRow,
-    stepRowCount,
-  };
-}
-
-function wrapText(text: string, width: number): string[] {
-  if (width <= 0) {
-    return [text];
-  }
-
-  const lines: string[] = [];
-  for (const rawLine of text.split("\n")) {
-    if (rawLine.length <= width) {
-      lines.push(rawLine);
-      continue;
-    }
-
-    let remaining = rawLine;
-    while (remaining.length > width) {
-      let breakAt = remaining.lastIndexOf(" ", width);
-      if (breakAt <= 0) {
-        breakAt = width;
-      }
-      lines.push(remaining.slice(0, breakAt));
-      remaining = remaining.slice(breakAt).trimStart();
-    }
-    if (remaining.length > 0) {
-      lines.push(remaining);
-    }
-  }
-
-  return lines.length > 0 ? lines : [""];
-}
-
 function ensureActiveVisible({
   activeIndex,
   bodyHeight,
@@ -583,15 +399,6 @@ function getSelectedIndices(activeIndex: number, selectionAnchor: number | null)
     selected.push(index);
   }
   return selected;
-}
-
-function isSelected(index: number, activeIndex: number, selectionAnchor: number | null): boolean {
-  if (selectionAnchor === null) {
-    return false;
-  }
-  const start = Math.min(activeIndex, selectionAnchor);
-  const end = Math.max(activeIndex, selectionAnchor);
-  return index >= start && index <= end;
 }
 
 function commitAnnotation({
@@ -711,11 +518,6 @@ function buildStatusSegments({
   }
 
   return segments;
-}
-
-function formatAnnotationInline(annotation: Annotation): string {
-  const spacer = annotation.type === "delete" ? "  " : " ";
-  return `${TYPE_ICONS[annotation.type]}${spacer}${annotation.text}`;
 }
 
 function buildViewportSegments(viewportCounts: { above: number; below: number }): Segment[] {
