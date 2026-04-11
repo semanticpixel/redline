@@ -35,6 +35,7 @@ export const reconciler = Reconciler({
     const node = createNode(type as MiniNode["type"]);
     attachYogaNode(node);
     setStyle(node, (props.style ?? {}) as never);
+    applyYogaStyle(node);
     if (typeof props.text === "string") {
       setText(node, props.text);
     }
