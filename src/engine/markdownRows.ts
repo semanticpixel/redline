@@ -448,7 +448,6 @@ function renderInline(tokens: Token[], style: InlineStyle, fallback = ""): Segme
           text: (token as Tokens.Codespan).text,
           ...style,
           color: "yellow",
-          dim: false,
         });
         break;
       case "link": {
@@ -539,24 +538,63 @@ function wrapSegments(
   };
 
   for (const segment of segments) {
-    for (const char of segment.text) {
-      if (char === "\n") {
+    for (const chunk of segment.text.match(/\n|[^\S\n]+|\S+/g) ?? []) {
+      if (chunk === "\n") {
         startContinuationRow();
         continue;
       }
 
-      if (currentWidth >= safeWidth) {
+      if (/^[^\S\n]+$/.test(chunk)) {
+        const collapsed = currentWidth === currentIndentWidth(currentRow) ? "" : " ";
+        if (!collapsed) {
+          continue;
+        }
+        if (currentWidth + collapsed.length > safeWidth) {
+          startContinuationRow();
+          continue;
+        }
+        appendText(currentRow, collapsed, segment);
+        currentWidth += collapsed.length;
+        continue;
+      }
+
+      if (currentWidth > currentIndentWidth(currentRow) && currentWidth + chunk.length > safeWidth) {
         startContinuationRow();
       }
 
-      appendChar(currentRow, char, segment);
-      currentWidth += 1;
+      let remaining = chunk;
+      while (remaining.length > 0) {
+        const available = safeWidth - currentWidth;
+        if (available <= 0) {
+          startContinuationRow();
+          continue;
+        }
+
+        const next = remaining.slice(0, available);
+        appendText(currentRow, next, segment);
+        currentWidth += next.length;
+        remaining = remaining.slice(next.length);
+
+        if (remaining.length > 0) {
+          startContinuationRow();
+        }
+      }
     }
   }
 
   return rows
     .filter((row, index) => index === 0 || row.length > 0)
     .map((row) => ({ segments: row.length > 0 ? row : [{ text: " " }] }));
+}
+
+function appendText(row: Segment[], text: string, source: Segment): void {
+  for (const char of text) {
+    appendChar(row, char, source);
+  }
+}
+
+function currentIndentWidth(row: Segment[]): number {
+  return row.length === 1 && row[0]?.text.trim().length === 0 ? row[0].text.length : 0;
 }
 
 function appendChar(row: Segment[], char: string, source: Segment): void {

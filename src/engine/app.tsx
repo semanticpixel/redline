@@ -358,7 +358,7 @@ function ensureActiveVisible({
     next = activeStart;
   }
   if (activeEnd > next + bodyHeight) {
-    next = activeEnd - bodyHeight;
+    next = activeEnd - activeStart > bodyHeight ? activeStart : activeEnd - bodyHeight;
   }
 
   return Math.max(0, Math.min(next, Math.max(0, rowLayout.rows.length - bodyHeight)));
