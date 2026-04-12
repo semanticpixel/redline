@@ -1,9 +1,10 @@
 export type Color = "white" | "yellow" | "cyan" | "red" | "green" | "gray" | "blue";
+export type BackgroundColor = "blue" | "gray" | "\e[38;5;248m";
 
 export type Segment = {
   text: string;
   color?: Color;
-  backgroundColor?: "blue";
+  backgroundColor?: BackgroundColor;
   bold?: boolean;
   dim?: boolean;
 };

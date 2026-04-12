@@ -62,7 +62,7 @@ export function computeMarkdownRows(
       active,
       selected,
       highlighted: active || selected,
-      backgroundColor: selected && !active ? "blue" : undefined,
+      backgroundColor: selected && !active ? "gray" : undefined,
       hasDelete: step.annotations.some((annotation) => annotation.type === "delete"),
     };
     const prefixLength = 2 + gutterWidth + 1 + 2;
