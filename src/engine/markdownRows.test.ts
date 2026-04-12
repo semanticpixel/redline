@@ -25,13 +25,12 @@ function rowTexts(rows: RenderedRow[]): string[] {
 {
   const layout = computeMarkdownRows(
     [step("# Plan\n\nParagraph one.\n\nParagraph two.")],
-    0,
-    null,
+    new Set([0]),
     80,
   );
   const texts = rowTexts(layout.rows);
 
-  assert.match(texts[0] ?? "", /1 ▸ Plan/);
+  assert.match(texts[0] ?? "", /1\s+Plan/);
   assert.equal(texts[1]?.trim(), "");
   assert.match(texts[2] ?? "", /Paragraph one\./);
   assert.equal(texts[3]?.trim(), "");
@@ -41,8 +40,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
 {
   const layout = computeMarkdownRows(
     [step("- First item\n  - Nested item\n- Second item")],
-    0,
-    null,
+    new Set([0]),
     100,
   );
   const text = rowTexts(layout.rows).join("\n");
@@ -55,8 +53,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
 {
   const layout = computeMarkdownRows(
     [step("## Architecture\n\n```ts\nconst x = 1;\n  y();\n```")],
-    0,
-    null,
+    new Set([0]),
     100,
   );
   const text = rowTexts(layout.rows).join("\n");
@@ -69,8 +66,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
 {
   const layout = computeMarkdownRows(
     [step("Paragraph with **bold** and *em* and `code`.")],
-    0,
-    null,
+    new Set([0]),
     100,
   );
   const firstRow = layout.rows[0]!;
@@ -83,8 +79,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
 {
   const layout = computeMarkdownRows(
     [step("Paragraph with compatibility preserved across wrapping.")],
-    0,
-    null,
+    new Set([0]),
     27,
   );
   const text = rowTexts(layout.rows).join("\n");
@@ -96,8 +91,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
 {
   const layout = computeMarkdownRows(
     [step("Inactive `yellowCode` should stay dim.")],
-    1,
-    null,
+    new Set(),
     80,
   );
   const firstRow = layout.rows[0]!;
@@ -115,15 +109,14 @@ function rowTexts(rows: RenderedRow[]): string[] {
 {
   const layout = computeMarkdownRows(
     [step("- Selectable bullet\n\nContinuation paragraph")],
-    0,
-    null,
+    new Set([0]),
     80,
   );
   const texts = rowTexts(layout.rows);
-  const gutterRows = texts.filter((text) => text.includes("1 ▸"));
+  const gutterRows = texts.filter((text) => /┃\s+1\s/.test(text));
 
   assert.equal(gutterRows.length, 1);
-  assert.match(texts[0] ?? "", /1 ▸ - Selectable bullet/);
+  assert.match(texts[0] ?? "", /1\s+- Selectable bullet/);
   assert.match(texts.join("\n"), /Continuation paragraph/);
 }
 
@@ -134,8 +127,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
       step("- Keep bullet compact"),
       step("## Architecture\n\nNew section."),
     ],
-    0,
-    null,
+    new Set(),
     100,
   );
   const texts = rowTexts(layout.rows);

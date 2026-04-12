@@ -35,8 +35,7 @@ const TYPE_ICONS: Record<Annotation["type"], string> = {
 
 export function computeMarkdownRows(
   steps: PlanStep[],
-  activeIndex: number,
-  selectionAnchor: number | null,
+  selectedSteps: Set<number>,
   width: number,
 ): RowLayout {
   const rows: RenderedRow[] = [];
@@ -47,13 +46,12 @@ export function computeMarkdownRows(
 
   for (let index = 0; index < totalSteps; index++) {
     const step = steps[index]!;
-    const active = index === activeIndex;
-    const selected = isSelected(index, activeIndex, selectionAnchor);
+    const selected = selectedSteps.has(index);
     const state: StepRenderState = {
-      active,
+      active: false,
       selected,
-      highlighted: active || selected,
-      backgroundColor: selected && !active ? "blue" : undefined,
+      highlighted: selected,
+      backgroundColor: selected ? "blue" : undefined,
       hasDelete: step.annotations.some((annotation) => annotation.type === "delete"),
     };
     const prefixLength = 2 + gutterWidth + 1 + 2;
@@ -205,20 +203,16 @@ function buildFirstPrefix(
 ): Segment[] {
   return [
     {
-      text: state.selected && !state.active ? "┃ " : "  ",
-      color: state.selected && !state.active ? "blue" : undefined,
-      bold: state.selected && !state.active,
+      text: state.selected ? "┃ " : "  ",
+      color: state.selected ? "blue" : undefined,
+      bold: state.selected,
     },
     {
       text: `${String(index + 1).padStart(gutterWidth, " ")} `,
-      color: state.active ? "yellow" : "gray",
-      dim: !state.active,
+      color: state.selected ? "yellow" : "gray",
+      dim: !state.selected,
     },
-    {
-      text: state.active ? "▸ " : "  ",
-      color: state.active ? "red" : undefined,
-      bold: state.active,
-    },
+    { text: "  " },
   ];
 }
 
@@ -685,11 +679,3 @@ function textFromUnknownToken(token: Token): string {
   return token.raw ?? "";
 }
 
-function isSelected(index: number, activeIndex: number, selectionAnchor: number | null): boolean {
-  if (selectionAnchor === null) {
-    return false;
-  }
-  const start = Math.min(activeIndex, selectionAnchor);
-  const end = Math.max(activeIndex, selectionAnchor);
-  return index >= start && index <= end;
-}

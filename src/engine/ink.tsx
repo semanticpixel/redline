@@ -1,3 +1,4 @@
+import { PassThrough } from "stream";
 import readline from "readline";
 import React from "react";
 import type { ReactNode } from "react";
@@ -8,11 +9,16 @@ import { computeYogaLayout } from "./layout/yoga.js";
 import { renderTree } from "./renderer.js";
 import { exitAltScreen, enterAltScreen, writeTerminal } from "./terminal.js";
 import { InputContext, type InputHandler, type InputKey } from "./hooks/useInput.js";
+import { MouseContext, type MouseHandler, type MouseEvent } from "./hooks/useMouse.js";
 import { TerminalSizeContext } from "./hooks/useTerminalSize.js";
 
 type Listener = {
   handler: InputHandler;
   isActive: boolean;
+};
+
+type MouseListener = {
+  handler: MouseHandler;
 };
 
 export type InkOptions = {
@@ -22,6 +28,38 @@ export type InkOptions = {
   onFrame?: (event: FrameEvent) => void;
 };
 
+const SGR_MOUSE_RE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+
+function parseMouseButton(cb: number): { button: MouseEvent["button"]; shift: boolean; ctrl: boolean } {
+  const shift = (cb & 4) !== 0;
+  const ctrl = (cb & 16) !== 0;
+  const base = cb & ~(4 | 8 | 16 | 32);
+
+  let button: MouseEvent["button"];
+  switch (base) {
+    case 0:
+      button = "left";
+      break;
+    case 1:
+      button = "middle";
+      break;
+    case 2:
+      button = "right";
+      break;
+    case 64:
+      button = "wheelUp";
+      break;
+    case 65:
+      button = "wheelDown";
+      break;
+    default:
+      button = "left";
+      break;
+  }
+
+  return { button, shift, ctrl };
+}
+
 export default class MiniInk {
   private readonly stdout: NodeJS.WriteStream;
   private readonly stdin: NodeJS.ReadStream;
@@ -29,6 +67,8 @@ export default class MiniInk {
   private readonly rootNode;
   private readonly container: any;
   private readonly listeners: Listener[] = [];
+  private readonly mouseListeners: MouseListener[] = [];
+  private readonly keypressStream = new PassThrough();
   private renderQueued = false;
   private currentNode: ReactNode = null;
   private currentFrame: Frame | null = null;
@@ -53,14 +93,21 @@ export default class MiniInk {
       this.resolveExit = resolve;
     });
 
-    readline.emitKeypressEvents(this.stdin);
+    // Set up raw mode and intercept stdin data before readline sees it.
+    // Mouse sequences are parsed and dispatched separately; everything
+    // else is forwarded to a PassThrough that readline processes.
+    readline.emitKeypressEvents(this.keypressStream);
     this.stdin.resume();
     if (this.stdin.isTTY) {
       this.stdin.setRawMode?.(true);
     }
-    this.stdin.on("keypress", this.handleKeypress);
+    this.stdin.on("data", this.handleRawData);
+    this.keypressStream.on("keypress", this.handleKeypress);
     this.stdout.on("resize", this.handleResize);
     process.on("exit", this.cleanupTerminal);
+
+    // Enable SGR mouse tracking (button events + SGR extended coordinates)
+    this.stdout.write("\x1b[?1000h\x1b[?1006h");
   }
 
   render = (node: ReactNode): void => {
@@ -84,14 +131,20 @@ export default class MiniInk {
           subscribe: (handler, config) => this.subscribeInput(handler, config),
         }}
       >
-        <TerminalSizeContext.Provider
+        <MouseContext.Provider
           value={{
-            columns: this.stdout.columns || 80,
-            rows: this.stdout.rows || 24,
+            subscribe: (handler) => this.subscribeMouse(handler),
           }}
         >
-          {node}
-        </TerminalSizeContext.Provider>
+          <TerminalSizeContext.Provider
+            value={{
+              columns: this.stdout.columns || 80,
+              rows: this.stdout.rows || 24,
+            }}
+          >
+            {node}
+          </TerminalSizeContext.Provider>
+        </MouseContext.Provider>
       </InputContext.Provider>
     );
   }
@@ -109,6 +162,17 @@ export default class MiniInk {
       const index = this.listeners.indexOf(listener);
       if (index >= 0) {
         this.listeners.splice(index, 1);
+      }
+    };
+  }
+
+  private subscribeMouse(handler: MouseHandler): () => void {
+    const listener: MouseListener = { handler };
+    this.mouseListeners.push(listener);
+    return () => {
+      const index = this.mouseListeners.indexOf(listener);
+      if (index >= 0) {
+        this.mouseListeners.splice(index, 1);
       }
     };
   }
@@ -175,6 +239,47 @@ export default class MiniInk {
     });
   }
 
+  private handleRawData = (data: Buffer): void => {
+    const str = data.toString("utf-8");
+
+    // Extract mouse sequences and forward the rest to readline
+    let lastEnd = 0;
+    SGR_MOUSE_RE.lastIndex = 0;
+
+    let match: RegExpExecArray | null;
+    while ((match = SGR_MOUSE_RE.exec(str)) !== null) {
+      // Forward any bytes before this mouse sequence
+      if (match.index > lastEnd) {
+        this.keypressStream.write(str.slice(lastEnd, match.index));
+      }
+      lastEnd = match.index + match[0].length;
+
+      const cb = Number(match[1]);
+      const cx = Number(match[2]);
+      const cy = Number(match[3]);
+      const isPress = match[4] === "M";
+
+      const { button, shift, ctrl } = parseMouseButton(cb);
+      const event: MouseEvent = {
+        button,
+        x: cx - 1, // SGR is 1-based
+        y: cy - 1,
+        shift,
+        ctrl,
+        type: isPress ? "press" : "release",
+      };
+
+      for (let i = this.mouseListeners.length - 1; i >= 0; i--) {
+        this.mouseListeners[i]!.handler(event);
+      }
+    }
+
+    // Forward remaining non-mouse bytes
+    if (lastEnd < str.length) {
+      this.keypressStream.write(str.slice(lastEnd));
+    }
+  };
+
   private handleKeypress = (input: string, key: readline.Key): void => {
     const normalized: InputKey = {
       upArrow: key.name === "up",
@@ -211,13 +316,17 @@ export default class MiniInk {
   };
 
   private cleanup = (): void => {
-    this.stdin.off("keypress", this.handleKeypress);
+    this.stdin.off("data", this.handleRawData);
+    this.keypressStream.off("keypress", this.handleKeypress);
     this.stdout.off("resize", this.handleResize);
     this.cleanupTerminal();
     this.resolveExit();
   };
 
   private cleanupTerminal = (): void => {
+    // Disable SGR mouse tracking
+    this.stdout.write("\x1b[?1006l\x1b[?1000l");
+
     if (this.stdin.isTTY) {
       this.stdin.setRawMode?.(false);
     }
