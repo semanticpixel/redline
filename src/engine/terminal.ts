@@ -10,6 +10,10 @@ const SHOW_CURSOR = "\u001b[?25h";
 const CLEAR_SCREEN = `${ESC}2J${ESC}H`;
 const SYNC_BEGIN = "\u001b[?2026h";
 const SYNC_END = "\u001b[?2026l";
+const ENABLE_BUTTON_MOUSE = "\u001b[?1002h";
+const DISABLE_BUTTON_MOUSE = "\u001b[?1002l";
+const ENABLE_SGR_MOUSE = "\u001b[?1006h";
+const DISABLE_SGR_MOUSE = "\u001b[?1006l";
 
 const ANSI_COLORS: Record<string, number> = {
   black: 30,
@@ -80,7 +84,15 @@ export function enterAltScreen(stdout: Writable): void {
 }
 
 export function exitAltScreen(stdout: Writable): void {
-  stdout.write(`${ESC}0m${SHOW_CURSOR}${EXIT_ALT_SCREEN}`);
+  stdout.write(`${ESC}0m${DISABLE_SGR_MOUSE}${DISABLE_BUTTON_MOUSE}${SHOW_CURSOR}${EXIT_ALT_SCREEN}`);
+}
+
+export function enableMouseReporting(stdout: Writable): void {
+  stdout.write(ENABLE_BUTTON_MOUSE + ENABLE_SGR_MOUSE);
+}
+
+export function disableMouseReporting(stdout: Writable): void {
+  stdout.write(DISABLE_SGR_MOUSE + DISABLE_BUTTON_MOUSE);
 }
 
 export function supportsSynchronizedOutput(): boolean {

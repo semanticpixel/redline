@@ -95,7 +95,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
 
 {
   const layout = computeMarkdownRows(
-    [step("Inactive `yellowCode` should stay dim.")],
+    [step("Inactive `yellowCode` should keep body dim setting.")],
     1,
     null,
     80,
@@ -107,7 +107,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
       (segment) =>
         segment.text.includes("yellowCode") &&
         segment.color === "yellow" &&
-        segment.dim,
+        segment.dim === false,
     ),
   );
 }
@@ -144,6 +144,37 @@ function rowTexts(rows: RenderedRow[]): string[] {
   assert.ok(headingIndex > 0);
   assert.equal(texts[headingIndex - 1]?.trim(), "");
   assert.equal(texts.filter((text) => text.includes("2   - Keep bullet compact")).length, 1);
+}
+
+{
+  const annotated = step("## Annotated");
+  annotated.annotations.push({
+    id: "a1",
+    type: "comment",
+    text: "Needs detail",
+  });
+  const layout = computeMarkdownRows(
+    [
+      step("## Context"),
+      step("- Keep bullet compact"),
+      step("## Architecture"),
+      annotated,
+    ],
+    null,
+    null,
+    100,
+  );
+
+  const spacer = layout.rows.find((row) => row.key.includes("section-spacer"));
+  const content = layout.rows.find((row) => row.key.includes("-md-"));
+  const annotation = layout.rows.find((row) => row.key.includes("-annotation-"));
+
+  assert.equal(spacer?.role, "spacer");
+  assert.equal(spacer?.stepIndex, undefined);
+  assert.equal(content?.role, "content");
+  assert.equal(content?.stepIndex, 0);
+  assert.equal(annotation?.role, "annotation");
+  assert.equal(annotation?.stepIndex, 3);
 }
 
 console.log("markdownRows tests passed");
