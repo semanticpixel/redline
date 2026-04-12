@@ -27,13 +27,25 @@ export type ParsedMousePackets = {
   rest: string;
 };
 
+export type ParsedMouseInput = ParsedMousePackets & {
+  keyboardInput: string;
+};
+
 const SGR_MOUSE_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
 
 export function parseSgrMousePackets(input: string): ParsedMousePackets {
+  const { events, rest } = parseSgrMouseInput(input);
+  return { events, rest };
+}
+
+export function parseSgrMouseInput(input: string): ParsedMouseInput {
   const events: MouseEvent[] = [];
+  const keyboardChunks: string[] = [];
   let lastMatchEnd = 0;
 
   for (const match of input.matchAll(SGR_MOUSE_PATTERN)) {
+    keyboardChunks.push(input.slice(lastMatchEnd, match.index));
+
     const rawButton = Number(match[1]);
     const x = Math.max(0, Number(match[2]) - 1);
     const y = Math.max(0, Number(match[3]) - 1);
@@ -48,11 +60,16 @@ export function parseSgrMousePackets(input: string): ParsedMousePackets {
 
   const trailing = input.slice(lastMatchEnd);
   const incompleteStart = trailing.lastIndexOf("\u001b[<");
-  const rest = incompleteStart >= 0 ? trailing.slice(incompleteStart) : "";
+  if (incompleteStart >= 0) {
+    keyboardChunks.push(trailing.slice(0, incompleteStart));
+  } else {
+    keyboardChunks.push(trailing);
+  }
 
   return {
     events,
-    rest,
+    keyboardInput: keyboardChunks.join(""),
+    rest: incompleteStart >= 0 ? trailing.slice(incompleteStart) : "",
   };
 }
 

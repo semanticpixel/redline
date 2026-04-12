@@ -95,7 +95,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
 
 {
   const layout = computeMarkdownRows(
-    [step("Inactive `yellowCode` should stay dim.")],
+    [step("Inactive `yellowCode` should keep body dim setting.")],
     1,
     null,
     80,
@@ -107,7 +107,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
       (segment) =>
         segment.text.includes("yellowCode") &&
         segment.color === "yellow" &&
-        segment.dim,
+        segment.dim === false,
     ),
   );
 }

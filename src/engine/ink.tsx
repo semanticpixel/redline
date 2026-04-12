@@ -1,3 +1,4 @@
+import { PassThrough } from "stream";
 import readline from "readline";
 import React from "react";
 import type { ReactNode } from "react";
@@ -5,7 +6,7 @@ import { createContainer, reconciler } from "./reconciler.js";
 import type { Frame, FrameEvent } from "./frame.js";
 import { diffFrames } from "./log-update.js";
 import { computeYogaLayout } from "./layout/yoga.js";
-import { parseSgrMousePackets } from "./mouse.js";
+import { parseSgrMouseInput } from "./mouse.js";
 import type { MouseEvent } from "./mouse.js";
 import { renderTree } from "./renderer.js";
 import { disableMouseReporting, enableMouseReporting, exitAltScreen, enterAltScreen, writeTerminal } from "./terminal.js";
@@ -38,6 +39,7 @@ export default class MiniInk {
   private readonly container: any;
   private readonly listeners: Listener[] = [];
   private readonly mouseListeners: MouseListener[] = [];
+  private readonly keypressStream = new PassThrough();
   private renderQueued = false;
   private currentNode: ReactNode = null;
   private currentFrame: Frame | null = null;
@@ -63,13 +65,13 @@ export default class MiniInk {
       this.resolveExit = resolve;
     });
 
-    readline.emitKeypressEvents(this.stdin);
+    readline.emitKeypressEvents(this.keypressStream);
     this.stdin.resume();
     if (this.stdin.isTTY) {
       this.stdin.setRawMode?.(true);
     }
-    this.stdin.on("keypress", this.handleKeypress);
     this.stdin.on("data", this.handleData);
+    this.keypressStream.on("keypress", this.handleKeypress);
     this.stdout.on("resize", this.handleResize);
     process.on("exit", this.cleanupTerminal);
   }
@@ -211,10 +213,6 @@ export default class MiniInk {
   }
 
   private handleKeypress = (input: string, key: readline.Key): void => {
-    if (input?.startsWith("\u001b[<")) {
-      return;
-    }
-
     const normalized: InputKey = {
       upArrow: key.name === "up",
       downArrow: key.name === "down",
@@ -245,8 +243,12 @@ export default class MiniInk {
 
   private handleData = (data: Buffer | string): void => {
     this.mouseBuffer += data.toString();
-    const parsed = parseSgrMousePackets(this.mouseBuffer);
+    const parsed = parseSgrMouseInput(this.mouseBuffer);
     this.mouseBuffer = parsed.rest.slice(-128);
+
+    if (parsed.keyboardInput) {
+      this.keypressStream.write(parsed.keyboardInput);
+    }
 
     for (const event of parsed.events) {
       this.dispatchMouse(event);
@@ -270,8 +272,8 @@ export default class MiniInk {
   };
 
   private cleanup = (): void => {
-    this.stdin.off("keypress", this.handleKeypress);
     this.stdin.off("data", this.handleData);
+    this.keypressStream.off("keypress", this.handleKeypress);
     this.stdout.off("resize", this.handleResize);
     this.cleanupTerminal();
     this.resolveExit();

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseSgrMousePackets } from "./mouse.js";
+import { parseSgrMouseInput, parseSgrMousePackets } from "./mouse.js";
 
 {
   const parsed = parseSgrMousePackets("\u001b[<64;10;3M\u001b[<65;10;4M");
@@ -99,6 +99,15 @@ import { parseSgrMousePackets } from "./mouse.js";
       ctrl: false,
     },
   ]);
+}
+
+{
+  const parsed = parseSgrMouseInput("a\u001b[<64;10;3Mb\u001b[<");
+
+  assert.equal(parsed.keyboardInput, "ab");
+  assert.equal(parsed.rest, "\u001b[<");
+  assert.equal(parsed.events.length, 1);
+  assert.equal(parsed.events[0]?.type, "wheel");
 }
 
 console.log("mouse tests passed");
