@@ -1,91 +1,100 @@
 # Architecture
 
-This document describes redline's architecture, data flow, and key design decisions.
+This document describes Redline's current architecture, data flow, and main design decisions.
 
 ## Overview
 
-Redline is a terminal-based plan annotation tool that integrates with Claude Code via the hook system. It consists of three layers: a hook integration layer, a TUI rendering layer, and a feedback formatting layer.
+Redline is a terminal-based plan annotation tool that integrates with Claude Code via the hook system. The runtime has three major parts: hook bridging, plan parsing/feedback, and a custom fullscreen terminal renderer.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │ Claude Code                                                 │
 │                                                             │
-│  Plan mode → ExitPlanMode → PermissionRequest hook fires    │
+│  Plan mode -> ExitPlanMode -> PermissionRequest hook fires  │
 │                    │                                        │
 │                    ▼                                        │
 │  ┌──────────────────────────────────┐                       │
-│  │  redline-hook.sh (wrapper)       │                       │
-│  │  - Saves stdin to temp file      │                       │
-│  │  - Opens new iTerm tab           │                       │
-│  │  - Waits for output file         │                       │
-│  │  - Relays response to stdout     │                       │
+│  │ redline-hook.sh                  │                       │
+│  │ - Saves hook JSON to temp file   │                       │
+│  │ - Opens a terminal tab           │                       │
+│  │ - Waits for output file          │                       │
+│  │ - Relays response to stdout      │                       │
 │  └──────────────┬───────────────────┘                       │
 │                 │                                           │
 │    ┌────────────▼────────────────┐                          │
-│    │  New iTerm Tab (has TTY)    │                          │
+│    │ New terminal tab with TTY   │                          │
 │    │                             │                          │
-│    │  node dist/bin/index.js     │                          │
+│    │ node dist/bin/index.js      │                          │
 │    │  ┌───────────────────────┐  │                          │
-│    │  │  hookIO.ts            │  │                          │
-│    │  │  - Reads piped JSON   │  │                          │
-│    │  │  - Reattaches TTY     │  │                          │
+│    │  │ hookIO.ts             │  │                          │
+│    │  │ read hook JSON        │  │                          │
 │    │  └───────────┬───────────┘  │                          │
 │    │              ▼              │                          │
 │    │  ┌───────────────────────┐  │                          │
-│    │  │  parsePlan.ts         │  │                          │
-│    │  │  - Markdown → Steps   │  │                          │
+│    │  │ parsePlan.ts          │  │                          │
+│    │  │ Markdown -> steps     │  │                          │
 │    │  └───────────┬───────────┘  │                          │
 │    │              ▼              │                          │
 │    │  ┌───────────────────────┐  │                          │
-│    │  │  Ink TUI (App.tsx)    │  │                          │
-│    │  │  - Navigation         │  │                          │
-│    │  │  - Annotations        │  │                          │
-│    │  │  - Multi-select       │  │                          │
+│    │  │ src/engine            │  │                          │
+│    │  │ custom React renderer │  │                          │
+│    │  │ scroll + selection UI │  │                          │
 │    │  └───────────┬───────────┘  │                          │
 │    │              ▼              │                          │
 │    │  ┌───────────────────────┐  │                          │
-│    │  │  hookIO.ts            │  │                          │
-│    │  │  - Writes output file │  │                          │
+│    │  │ hookIO.ts             │  │                          │
+│    │  │ write hook response   │  │                          │
 │    │  └───────────────────────┘  │                          │
 │    └─────────────────────────────┘                          │
 │                 │                                           │
 │                 ▼                                           │
-│  Hook wrapper reads output file → stdout → Claude Code      │
+│  Hook wrapper reads output file -> stdout -> Claude Code    │
 │                                                             │
-│  behavior: "allow" → Claude proceeds with implementation    │
-│  behavior: "deny"  → Claude receives feedback, revises plan │
+│  allow -> Claude proceeds                                   │
+│  deny  -> Claude receives feedback and revises the plan     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Project structure
+## Project Structure
 
-```
+```text
 redline/
 ├── src/
 │   ├── bin/
-│   │   └── index.tsx          # CLI entry point
-│   ├── components/
-│   │   ├── App.tsx            # Main TUI orchestrator
-│   │   ├── Header.tsx         # Branding + plan title
-│   │   ├── PlanStepView.tsx   # Individual step rendering
-│   │   └── StatusBar.tsx      # Keybinding hints + state
+│   │   └── index.ts          # CLI entry point
+│   ├── engine/
+│   │   ├── app.tsx           # Redline review UI state and interactions
+│   │   ├── root.ts           # createRoot/render public entry points
+│   │   ├── runtime.tsx       # runtime lifecycle, input, mouse, resize, frames
+│   │   ├── reconciler.ts     # React host config
+│   │   ├── dom.ts            # lightweight host tree nodes
+│   │   ├── layout/yoga.ts    # Yoga layout bridge
+│   │   ├── renderer.ts       # host tree -> screen buffer
+│   │   ├── screen.ts         # cell/style frame memory
+│   │   ├── log-update.ts     # frame diffing
+│   │   ├── terminal.ts       # ANSI serialization and terminal modes
+│   │   ├── markdownRows.ts   # Markdown tokens -> rendered plan rows
+│   │   ├── selection.ts      # row selection -> parsed step indices
+│   │   ├── mouse.ts          # SGR mouse decoding
+│   │   ├── components/       # Box, Text, ScrollBox, Divider, AlternateScreen
+│   │   └── hooks/            # useInput, useMouse, useTerminalSize
 │   ├── utils/
-│   │   ├── hookIO.ts          # stdin/stdout/file I/O for hook integration
-│   │   └── parsePlan.ts       # Markdown → PlanStep[] parser + feedback formatter
-│   └── types.ts               # TypeScript type definitions
-├── redline-hook.sh            # Wrapper script for Claude Code hook
-├── hooks.json                 # Reference hook config for settings.json
+│   │   ├── hookIO.ts         # stdin/stdout/file I/O for hook integration
+│   │   └── parsePlan.ts      # Markdown -> PlanStep[] parser + feedback format
+│   └── types.ts              # shared PlanStep/Annotation types
+├── redline-hook.sh           # wrapper script for Claude Code hook
+├── hooks.json                # reference hook config
 ├── package.json
 ├── tsconfig.json
-├── tsup.config.ts             # Build config (bundles to dist/bin/index.js)
+├── tsup.config.ts
 └── ARCHITECTURE.md
 ```
 
-## Data flow
+## Data Flow
 
-### 1. Hook trigger
+### 1. Hook Trigger
 
-Claude Code calls `ExitPlanMode` when a plan is ready. This fires a `PermissionRequest` event. Our hook (configured in `~/.claude/settings.json`) runs `redline-hook.sh`.
+Claude Code calls `ExitPlanMode` when a plan is ready. This fires a `PermissionRequest` event. The configured hook runs `redline-hook.sh`.
 
 The hook receives JSON on stdin:
 
@@ -102,68 +111,94 @@ The hook receives JSON on stdin:
 }
 ```
 
-### 2. The TTY problem
+### 2. The TTY Bridge
 
-Claude Code hooks run without a controlling terminal (TTY). Ink requires a TTY for raw mode keyboard input. This is a fundamental constraint of the hook execution model.
+Claude Code hooks run without a controlling terminal. Redline's fullscreen renderer needs a TTY for raw keyboard input, SGR mouse reporting, alternate-screen mode, and ANSI output.
 
-**Solution:** `redline-hook.sh` acts as a bridge:
+`redline-hook.sh` handles this bridge:
 
-1. Saves stdin JSON to a temp file (`/tmp/redline-stdin-$PID.json`)
-2. Sets `REDLINE_OUTPUT_FILE` env var pointing to an output temp file
-3. Opens a new iTerm tab (which has a TTY) and runs the Node process there
-4. Polls for the output file in a loop
-5. When the file appears, reads it and writes to stdout for Claude Code
+1. Saves stdin JSON to a temp file.
+2. Sets `REDLINE_OUTPUT_FILE` to a response temp file.
+3. Opens a terminal tab and runs the Node process there.
+4. Polls for the response file.
+5. Writes the response JSON to stdout for Claude Code.
 
-The Node process (`index.tsx`) also handles a secondary TTY reattachment for the direct-pipe testing scenario: after reading piped stdin, it reopens `/dev/tty` as a new `ReadStream` and replaces `process.stdin`. This allows `jq ... | redline` to work from a regular terminal.
+The Node process also handles direct-pipe testing by reading piped stdin first, reopening `/dev/tty`, and replacing `process.stdin` when possible.
 
-### 3. Plan parsing
+### 3. Plan Parsing
 
-`parsePlan.ts` converts the markdown plan into an array of `PlanStep` objects. The parser splits on:
-
-- Headings (`#`, `##`, `###`, etc.)
-- Numbered list items (`1.`, `2.`, etc.)
-- Bullet points (`-`, `*`)
-
-Each becomes a discrete step that can be independently annotated. Continuation lines (indented text, code blocks, etc.) are grouped with the preceding step.
+`parsePlan.ts` converts the Markdown plan into `PlanStep[]`. The parser splits on headings and list items that Redline treats as selectable review units. Continuation lines are grouped with the preceding step.
 
 ```typescript
 interface PlanStep {
   id: number;
-  content: string;        // Raw markdown for this step
-  depth: number;          // Nesting level (h1=1, h2=2, bullet=3)
+  content: string;
+  depth: number;
   annotations: Annotation[];
 }
 ```
 
-### 4. TUI rendering
+Markdown rendering is separate from step parsing. `markdownRows.ts` lexes each step with `marked`, renders Markdown tokens into styled row segments, preserves block spacing, wraps rows to the viewport, and attaches internal row metadata for selection hit testing.
 
-The TUI is built with Ink (React for the terminal). The component tree:
+### 4. Custom Terminal Engine
 
+The current renderer is not the public `ink` npm package. It is a small custom engine built for Redline's fullscreen needs.
+
+The pipeline is:
+
+```text
+React components
+  -> react-reconciler host tree
+  -> Yoga layout
+  -> screen buffer
+  -> previous/next frame diff
+  -> ANSI patch write
 ```
-<App>                        # State management + keyboard input
-  <Header />                 # "▌ redline — plan review" + plan title
-  <PlanStepView />           # × N — one per visible step
-  <TextInput />              # Conditionally rendered during annotation
-  <StatusBar />              # Keybindings + annotation count
-</App>
+
+Important pieces:
+
+- `root.ts` exposes `createRoot()` and `render()`.
+- `runtime.tsx` owns raw input, mouse events, terminal resize, frame scheduling, and cleanup.
+- `reconciler.ts` mounts React components into the lightweight host tree from `dom.ts`.
+- `layout/yoga.ts` computes box layout and text measurement.
+- `renderer.ts`, `output.ts`, and `screen.ts` paint the tree into an in-memory screen buffer.
+- `log-update.ts` produces small patch operations instead of clearing and redrawing the screen.
+- `terminal.ts` serializes patches and manages alt-screen, cursor, and mouse modes.
+
+### 5. App Interaction Model
+
+`app.tsx` renders the review UI:
+
+```text
+<AlternateScreen>
+  <Box column>
+    header
+    divider
+    <ScrollBox>
+      Markdown-rendered plan rows
+    </ScrollBox>
+    divider
+    footer or annotation input
+  </Box>
+</AlternateScreen>
 ```
 
-**Keyboard handling** uses two `useInput` hooks to avoid conflicts with `TextInput`:
+The primary workflow is scroll and select:
 
-- **Navigation hook** (`isActive: !isAnnotating`) — handles arrow keys, annotation triggers (`c`, `d`, `r`, `?`), undo, submit, quit
-- **Escape hook** (`isActive: isAnnotating`) — handles `Esc` to cancel annotation input
+- Mouse wheel scrolls the `ScrollBox`.
+- PageUp, PageDown, Home, and End are keyboard scroll fallbacks.
+- Dragging inside the plan body creates an app-managed row selection.
+- Shift-click extends the current row selection.
+- `selection.ts` resolves selected rendered rows back to unique parsed step indices.
+- Annotation keys apply to selected parsed steps.
 
-This separation ensures `TextInput` gets clean keyboard focus during annotation mode.
+V1 selection maps rendered rows to whole parsed steps. Exact Markdown character/source-span annotations are a separate follow-up because source offsets must survive tokenization, wrapping, and terminal cell hit testing.
 
-**Multi-select** is tracked via a `selectionAnchor` state. `Shift+↑↓` sets the anchor on first press, then extends the range as you move. Regular `↑↓` clears the selection. All annotation actions apply to the full selected range.
-
-**Scrolling** uses a viewport window. The visible rows are calculated from `process.stdout.rows`, and the window follows the active step with overflow indicators ("↑ N more above", "↓ N more below").
-
-### 5. Feedback formatting
+### 6. Feedback Formatting
 
 When the user presses `Enter` with annotations present, `formatFeedback()` in `parsePlan.ts` assembles a structured message:
 
-```
+```text
 Plan feedback from redline review:
 
 On step: "### 2. Update `package.json`"
@@ -175,27 +210,25 @@ On step: "## Verification"
 Please revise the plan addressing the above annotations, then present the updated plan.
 ```
 
-This is sent as the `message` field in a `deny` decision. Claude Code receives it, Claude revises the plan, and the cycle repeats.
+This is sent as a `deny` decision. If there are no annotations, Redline emits an `allow` decision.
 
-### 6. Hook response
+### 7. Hook Response
 
-Output is written via `hookIO.ts`. The `writeOutput()` function checks for `REDLINE_OUTPUT_FILE`:
+Output is written via `hookIO.ts`.
 
-- **If set** (hook mode): writes JSON to the file so `redline-hook.sh` can relay it
-- **If not set** (direct pipe/testing): writes to `process.stdout`
-
-Two possible responses:
+- If `REDLINE_OUTPUT_FILE` is set, Redline writes JSON to that file so `redline-hook.sh` can relay it.
+- If it is not set, Redline writes to `process.stdout` for direct testing.
 
 ```json
-// Approve — no annotations, Claude proceeds
 {
   "hookSpecificOutput": {
     "hookEventName": "PermissionRequest",
     "decision": { "behavior": "allow" }
   }
 }
+```
 
-// Deny — has annotations, Claude receives feedback
+```json
 {
   "hookSpecificOutput": {
     "hookEventName": "PermissionRequest",
@@ -207,56 +240,53 @@ Two possible responses:
 }
 ```
 
-## Key design decisions
+## Key Design Decisions
 
-### Why Ink (React for terminal)?
+### Why a Custom Renderer?
 
-Component-based rendering maps naturally to the step list + annotation + status bar layout. Ink handles terminal escape codes, cursor management, and re-rendering. The React mental model (state → render) makes the annotation flow clean: add annotation → state updates → TUI re-renders with the annotation visible.
+The old implementation used the public Ink package. That made early iteration fast, but Redline needed tighter control over flicker, terminal mouse mode, scroll clipping, and row-level selection metadata. The current renderer keeps the React authoring model while owning the terminal pipeline directly.
 
-### Why a wrapper shell script?
+### Why a Wrapper Shell Script?
 
-The no-TTY constraint is not solvable from within Node.js when running as a hook subprocess. We explored several approaches:
+The no-TTY hook environment is not solvable from inside the hook subprocess. Opening a terminal tab keeps the product terminal-native while giving the renderer the input and output streams it needs.
 
-1. **Direct TUI in hook process** — fails because no TTY exists
-2. **Reopen `/dev/tty`** — works for direct pipe testing but `/dev/tty` doesn't exist in hook subprocesses
-3. **Browser-based UI** — works (this is what Plannotator does) but breaks the terminal-native goal
-4. **New terminal tab via AppleScript** — the chosen approach; keeps everything terminal-native with minimal overhead
+### Why `REDLINE_OUTPUT_FILE`?
 
-### Why `REDLINE_OUTPUT_FILE` instead of stdout?
+The fullscreen renderer needs stdout for terminal drawing. The hook response therefore goes through a separate file, which the wrapper script relays back to Claude Code.
 
-In the new terminal tab, Ink needs stdout for rendering the TUI. If we redirect stdout to a file (for the hook response), the TUI becomes invisible. The env var approach lets Ink own stdout while `hookIO.ts` writes the hook response to a separate file.
+### Why Whole-Step Annotations for Now?
 
-### Why split `useInput` hooks?
+Rows know which parsed step they belong to, but not the exact Markdown source offsets for every rendered cell. Whole-step annotations preserve the existing feedback format while leaving a clear path toward source-span annotation later.
 
-Ink's `TextInput` and `useInput` both listen on stdin. When both are active, keystrokes get consumed unpredictably — pressing `c` during annotation would both type "c" and try to start a new comment. The `isActive` flag cleanly separates the two modes.
+### Why Mouse Selection Instead of Native Terminal Selection?
 
-### Why toggle delete instead of stack?
-
-In early testing, pressing `d` multiple times on the same step created multiple "Remove this step" annotations. This was confusing and wasteful. Toggle behavior (press to mark, press again to unmark) is more intuitive and matches how strikethrough works conceptually.
+Native terminal selection is not reliably observable by the app. Redline enables SGR mouse reporting and renders its own selection highlight so annotation shortcuts can target the selected rows deterministically.
 
 ## Build
 
 ```bash
-pnpm install     # Install dependencies
-pnpm build       # Compile TypeScript → dist/bin/index.js via tsup
-pnpm dev         # Watch mode for development
+pnpm install
+pnpm build
+pnpm dev
 ```
 
-tsup bundles everything into a single ESM file with a shebang, marking `react`, `ink`, and `ink-text-input` as external (resolved from `node_modules` at runtime).
+`tsup` builds a single ESM CLI entry at `dist/bin/index.js`. React and the reconciler are bundled to avoid dynamic `require("react")` calls in Node's ESM runtime.
 
 ## Testing
 
 ```bash
-# Demo mode — loads a sample plan
+# Pure renderer and input tests
+pnpm exec tsx src/engine/markdownRows.test.ts
+pnpm exec tsx src/engine/mouse.test.ts
+pnpm exec tsx src/engine/selection.test.ts
+
+# Typecheck and build
+pnpm exec tsc --noEmit
+pnpm build
+
+# Demo mode
 node dist/bin/index.js
 
 # Simulated hook input
 jq -n '{session_id:"test",tool_name:"ExitPlanMode",tool_input:{plan:"# Plan\n## Step 1\nDo X\n## Step 2\nDo Y"}}' | node dist/bin/index.js
-
-# Full hook integration test
-# 1. Set command in ~/.claude/settings.json to point to redline-hook.sh
-# 2. Restart Claude Code
-# 3. Shift+Tab into plan mode
-# 4. Give Claude a task
-# 5. Redline should intercept when the plan is ready
 ```
