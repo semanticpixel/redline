@@ -10,7 +10,7 @@ import { useInput } from "./hooks/useInput.js";
 import { useMouse } from "./hooks/useMouse.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { computeMarkdownRows } from "./markdownRows.js";
-import { resolveSelectedStepIndices } from "./selection.js";
+import { extendRowSelection, resolveSelectedStepIndices } from "./selection.js";
 import type { RowSelection } from "./selection.js";
 import type { Segment } from "./renderTypes.js";
 
@@ -93,6 +93,13 @@ export default function RedlineApp({
     const row = rowFromMouse(event.y, scrollRef.current, bodyHeight, rowLayout.rows.length);
 
     if (event.type === "press") {
+      if (event.shift) {
+        setRowSelection((current) => extendRowSelection(current, row));
+        isDraggingRef.current = false;
+        setStatusMessage("");
+        return;
+      }
+
       setRowSelection({ anchor: row, focus: row });
       isDraggingRef.current = true;
       setStatusMessage("");
@@ -292,7 +299,7 @@ export default function RedlineApp({
                 { text: "wheel", color: "white", bold: true },
                 { text: "/Page scroll  ", color: "gray" },
                 { text: "drag", color: "blue", bold: true },
-                { text: " select  ", color: "gray" },
+                { text: "/Shift-click select  ", color: "gray" },
                 { text: "c", color: "yellow", bold: true },
                 { text: " comment  ", color: "gray" },
                 { text: "?", color: "cyan", bold: true },
