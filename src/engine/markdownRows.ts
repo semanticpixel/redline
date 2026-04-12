@@ -16,6 +16,7 @@ type StepRenderState = {
   highlighted: boolean;
   backgroundColor?: Segment["backgroundColor"];
   hasDelete: boolean;
+  annotationColor?: Segment["color"];
 };
 
 type InlineStyle = Omit<Segment, "text">;
@@ -64,12 +65,14 @@ export function computeMarkdownRows(
     const selected = selectedStepIndices.size > 0
       ? selectedStepIndices.has(index)
       : isSelected(index, activeIndex, selectionAnchor);
+    const annotationType = prioritizedAnnotationType(step.annotations);
     const state: StepRenderState = {
       active,
       selected,
       highlighted: active || selected,
       backgroundColor: selected && !active ? "gray" : undefined,
-      hasDelete: step.annotations.some((annotation) => annotation.type === "delete"),
+      hasDelete: annotationType === "delete",
+      annotationColor: annotationType ? TYPE_COLORS[annotationType] : undefined,
     };
     const prefixLength = 2 + gutterWidth + 1 + 2;
     const prefixPadding = " ".repeat(prefixLength);
@@ -236,9 +239,9 @@ function buildFirstPrefix(
 ): Segment[] {
   return [
     {
-      text: state.selected && !state.active ? "┃ " : "  ",
-      color: state.selected && !state.active ? "blue" : undefined,
-      bold: state.selected && !state.active,
+      text: state.annotationColor ? "┃ " : "  ",
+      color: state.annotationColor,
+      bold: Boolean(state.annotationColor),
     },
     {
       text: `${String(index + 1).padStart(gutterWidth, " ")} `,
@@ -559,18 +562,26 @@ function annotationStyle(annotation: Annotation, state: StepRenderState): Inline
 }
 
 function annotationBadge(annotations: Annotation[]): AnnotationBadge | null {
-  if (annotations.length === 0) {
+  const type = prioritizedAnnotationType(annotations);
+
+  if (!type) {
     return null;
   }
-
-  const type = ANNOTATION_TYPE_PRIORITY.find((candidate) =>
-    annotations.some((annotation) => annotation.type === candidate),
-  ) ?? "comment";
 
   return {
     text: ` [${annotations.length}]`,
     color: TYPE_COLORS[type],
   };
+}
+
+function prioritizedAnnotationType(annotations: Annotation[]): Annotation["type"] | null {
+  if (annotations.length === 0) {
+    return null;
+  }
+
+  return ANNOTATION_TYPE_PRIORITY.find((candidate) =>
+    annotations.some((annotation) => annotation.type === candidate),
+  ) ?? "comment";
 }
 
 function highlightCodeLine(

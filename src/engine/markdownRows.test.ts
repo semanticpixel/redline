@@ -166,6 +166,23 @@ function rowTexts(rows: RenderedRow[]): string[] {
 }
 
 {
+  const layout = computeMarkdownRows(
+    [step("Selected only"), annotatedStep("Annotated only", ["question"])],
+    null,
+    null,
+    80,
+    { selectedStepIndices: [0] },
+  );
+  const selectedMarker = layout.rows.find((row) => row.stepIndex === 0 && row.role === "content")?.segments[0];
+  const annotatedMarker = layout.rows.find((row) => row.stepIndex === 1 && row.role === "content")?.segments[0];
+
+  assert.equal(selectedMarker?.text, "  ");
+  assert.equal(selectedMarker?.color, undefined);
+  assert.equal(annotatedMarker?.text, "┃ ");
+  assert.equal(annotatedMarker?.color, "cyan");
+}
+
+{
   const nonDeleteTypes: Annotation["type"][] = ["comment", "question", "replace"];
 
   for (const type of nonDeleteTypes) {
