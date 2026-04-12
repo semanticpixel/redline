@@ -514,7 +514,7 @@ function bodyStyle(state: StepRenderState): InlineStyle {
   if (state.highlighted) {
     return { color: "white", backgroundColor: state.backgroundColor };
   }
-  return { color: "gray", backgroundColor: state.backgroundColor, dim: true };
+  return { color: "gray", backgroundColor: state.backgroundColor, dim: false };
 }
 
 function codeStyle(state: StepRenderState): InlineStyle {
