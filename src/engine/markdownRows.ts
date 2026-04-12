@@ -521,7 +521,7 @@ function codeStyle(state: StepRenderState): InlineStyle {
   if (state.hasDelete) {
     return { color: "red", backgroundColor: state.backgroundColor, dim: !state.highlighted };
   }
-  return { color: "gray", backgroundColor: state.backgroundColor, dim: true };
+  return { color: "gray", backgroundColor: state.backgroundColor, dim: false };
 }
 
 function blockquoteStyle(state: StepRenderState): InlineStyle {

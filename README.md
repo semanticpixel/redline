@@ -134,6 +134,19 @@ jq -n '{
 }' | node dist/bin/index.js
 ```
 
+### Testing with a realistic plan
+
+A multi-phase plan with embedded code snippets (SQL, TypeScript, TSX) is included for manual testing:
+
+```bash
+pnpm build
+jq -n --rawfile plan test-plan.md \
+  '{session_id:"test",tool_name:"ExitPlanMode",tool_input:{plan:$plan}}' \
+  | node dist/bin/index.js
+```
+
+This exercises heading hierarchy, inline code, fenced code blocks, and multi-line step content. See [`test-plan.md`](test-plan.md) for the full plan.
+
 ## Keybindings
 
 | Key | Action |
