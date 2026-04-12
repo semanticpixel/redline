@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { RowLayout } from "./renderTypes.js";
-import { resolveSelectedStepIndices } from "./selection.js";
+import { extendRowSelection, resolveSelectedStepIndices } from "./selection.js";
 
 const rowLayout: RowLayout = {
   rows: [
@@ -20,5 +20,7 @@ assert.deepEqual(resolveSelectedStepIndices(rowLayout, { anchor: 1, focus: 1 }),
 assert.deepEqual(resolveSelectedStepIndices(rowLayout, { anchor: 1, focus: 4 }), [0, 1]);
 assert.deepEqual(resolveSelectedStepIndices(rowLayout, { anchor: 4, focus: 5 }), [1, 2]);
 assert.deepEqual(resolveSelectedStepIndices(rowLayout, { anchor: 2, focus: 2 }), []);
+assert.deepEqual(extendRowSelection(null, 3), { anchor: 3, focus: 3 });
+assert.deepEqual(extendRowSelection({ anchor: 1, focus: 1 }, 5), { anchor: 1, focus: 5 });
 
 console.log("selection tests passed");

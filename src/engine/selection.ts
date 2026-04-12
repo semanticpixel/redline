@@ -12,6 +12,13 @@ export function normalizeRowSelection(selection: RowSelection): { start: number;
   };
 }
 
+export function extendRowSelection(
+  selection: RowSelection | null,
+  focus: number,
+): RowSelection {
+  return selection ? { ...selection, focus } : { anchor: focus, focus };
+}
+
 export function resolveSelectedStepIndices(
   rowLayout: RowLayout,
   selection: RowSelection | null,
