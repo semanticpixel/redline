@@ -19,6 +19,10 @@ type StepRenderState = {
 };
 
 type InlineStyle = Omit<Segment, "text">;
+type AnnotationBadge = {
+  text: string;
+  color: Segment["color"];
+};
 
 type ComputeMarkdownRowsOptions = {
   selectedStepIndices?: Iterable<number>;
@@ -37,6 +41,8 @@ const TYPE_ICONS: Record<Annotation["type"], string> = {
   delete: "🗑️",
   replace: "✏️",
 };
+
+const ANNOTATION_TYPE_PRIORITY: Annotation["type"][] = ["delete", "replace", "question", "comment"];
 
 export function computeMarkdownRows(
   steps: PlanStep[],
@@ -68,7 +74,7 @@ export function computeMarkdownRows(
     const prefixLength = 2 + gutterWidth + 1 + 2;
     const prefixPadding = " ".repeat(prefixLength);
     const availableWidth = Math.max(1, width - prefixLength);
-    const firstLineSuffix = step.annotations.length > 0 ? ` [${step.annotations.length}]` : "";
+    const firstLineBadge = annotationBadge(step.annotations);
     const logicalRows = renderStepMarkdown(step, state);
 
     if (index > 0 && startsWithHeading(step)) {
@@ -87,7 +93,7 @@ export function computeMarkdownRows(
       gutterWidth,
       prefixPadding,
       availableWidth,
-      firstLineSuffix,
+      firstLineBadge,
       stepIndex: index,
     });
 
@@ -120,7 +126,7 @@ function addLogicalRows({
   gutterWidth,
   prefixPadding,
   availableWidth,
-  firstLineSuffix,
+  firstLineBadge,
   stepIndex,
 }: {
   rows: RenderedRow[];
@@ -131,25 +137,25 @@ function addLogicalRows({
   gutterWidth: number;
   prefixPadding: string;
   availableWidth: number;
-  firstLineSuffix: string;
+  firstLineBadge: AnnotationBadge | null;
   stepIndex: number;
 }): void {
   const contentRows = logicalRows.length > 0 ? logicalRows : [plainTextRow(step.content, bodyStyle(state))];
   let paintedAnyRow = false;
 
   contentRows.forEach((logicalRow, logicalRowIndex) => {
-    const suffix = !paintedAnyRow ? firstLineSuffix : "";
+    const badge = !paintedAnyRow ? firstLineBadge : null;
     const wrappedRows = logicalRow.blank
       ? [{ segments: [{ text: " " }], blank: true }]
       : logicalRow.preserveWhitespace
         ? wrapSegmentsPreservingWhitespace(
             logicalRow.segments,
-            Math.max(1, availableWidth - suffix.length),
+            Math.max(1, availableWidth - (badge?.text.length ?? 0)),
             logicalRow.hangingIndent ?? 0,
           )
         : wrapSegments(
             logicalRow.segments,
-            Math.max(1, availableWidth - suffix.length),
+            Math.max(1, availableWidth - (badge?.text.length ?? 0)),
             logicalRow.hangingIndent ?? 0,
           );
 
@@ -161,10 +167,10 @@ function addLogicalRows({
 
       segments.push(...wrappedRow.segments);
 
-      if (isFirstStepRow && suffix) {
+      if (isFirstStepRow && badge) {
         segments.push({
-          text: suffix,
-          color: "red",
+          text: badge.text,
+          color: badge.color,
           backgroundColor: state.backgroundColor,
           bold: true,
         });
@@ -476,7 +482,7 @@ function renderInline(tokens: Token[], style: InlineStyle, fallback = ""): Segme
         segments.push({
           text: (token as Tokens.Codespan).text,
           ...style,
-          color: "yellow",
+          color: style.color === "red" ? style.color : "yellow",
         });
         break;
       case "link": {
@@ -549,6 +555,21 @@ function annotationStyle(annotation: Annotation, state: StepRenderState): Inline
     color: TYPE_COLORS[annotation.type],
     backgroundColor: state.backgroundColor,
     dim: false,
+  };
+}
+
+function annotationBadge(annotations: Annotation[]): AnnotationBadge | null {
+  if (annotations.length === 0) {
+    return null;
+  }
+
+  const type = ANNOTATION_TYPE_PRIORITY.find((candidate) =>
+    annotations.some((annotation) => annotation.type === candidate),
+  ) ?? "comment";
+
+  return {
+    text: ` [${annotations.length}]`,
+    color: TYPE_COLORS[type],
   };
 }
 
