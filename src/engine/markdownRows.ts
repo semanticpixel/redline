@@ -7,6 +7,7 @@ type LogicalRow = {
   blank?: boolean;
   hangingIndent?: number;
   preserveIndent?: boolean;
+  preserveWhitespace?: boolean;
 };
 
 type StepRenderState = {
@@ -140,11 +141,17 @@ function addLogicalRows({
     const suffix = !paintedAnyRow ? firstLineSuffix : "";
     const wrappedRows = logicalRow.blank
       ? [{ segments: [{ text: " " }], blank: true }]
-      : wrapSegments(
-          logicalRow.segments,
-          Math.max(1, availableWidth - suffix.length),
-          logicalRow.hangingIndent ?? 0,
-        );
+      : logicalRow.preserveWhitespace
+        ? wrapSegmentsPreservingWhitespace(
+            logicalRow.segments,
+            Math.max(1, availableWidth - suffix.length),
+            logicalRow.hangingIndent ?? 0,
+          )
+        : wrapSegments(
+            logicalRow.segments,
+            Math.max(1, availableWidth - suffix.length),
+            logicalRow.hangingIndent ?? 0,
+          );
 
     wrappedRows.forEach((wrappedRow, wrappedIndex) => {
       const isFirstStepRow = !paintedAnyRow;
@@ -393,7 +400,10 @@ function renderListItem(
 function renderCode(token: Tokens.Code, state: StepRenderState): LogicalRow[] {
   const lines = token.text.split("\n");
   const rows = lines.length > 0 ? lines : [""];
-  return rows.map((line) => plainTextRow(line.length > 0 ? line : " ", codeStyle(state)));
+  return rows.map((line) => ({
+    segments: highlightCodeLine(line.length > 0 ? line : " ", token.lang, state),
+    preserveWhitespace: true,
+  }));
 }
 
 function renderBlockquote(
@@ -459,7 +469,7 @@ function renderInline(tokens: Token[], style: InlineStyle, fallback = ""): Segme
       }
       case "em": {
         const em = token as Tokens.Em;
-        segments.push(...renderInline(em.tokens, { ...style, dim: true }, em.text));
+        segments.push(...renderInline(em.tokens, style, em.text));
         break;
       }
       case "codespan":
@@ -479,7 +489,7 @@ function renderInline(tokens: Token[], style: InlineStyle, fallback = ""): Segme
         break;
       case "del": {
         const del = token as Tokens.Del;
-        segments.push(...renderInline(del.tokens, { ...style, dim: true }, del.text));
+        segments.push(...renderInline(del.tokens, style, del.text));
         break;
       }
       case "br":
@@ -499,7 +509,7 @@ function renderInline(tokens: Token[], style: InlineStyle, fallback = ""): Segme
 
 function headingStyle(state: StepRenderState): InlineStyle {
   if (state.hasDelete) {
-    return { color: "red", backgroundColor: state.backgroundColor, bold: true, dim: !state.highlighted };
+    return { color: "red", backgroundColor: state.backgroundColor, bold: true };
   }
   if (state.highlighted) {
     return { color: "white", backgroundColor: state.backgroundColor, bold: true };
@@ -509,7 +519,7 @@ function headingStyle(state: StepRenderState): InlineStyle {
 
 function bodyStyle(state: StepRenderState): InlineStyle {
   if (state.hasDelete) {
-    return { color: "red", backgroundColor: state.backgroundColor, dim: !state.highlighted };
+    return { color: "red", backgroundColor: state.backgroundColor };
   }
   if (state.highlighted) {
     return { color: "white", backgroundColor: state.backgroundColor };
@@ -519,25 +529,151 @@ function bodyStyle(state: StepRenderState): InlineStyle {
 
 function codeStyle(state: StepRenderState): InlineStyle {
   if (state.hasDelete) {
-    return { color: "red", backgroundColor: state.backgroundColor, dim: !state.highlighted };
+    return { color: "red", backgroundColor: state.backgroundColor };
+  }
+  if (state.highlighted) {
+    return { color: "white", backgroundColor: state.backgroundColor };
   }
   return { color: "gray", backgroundColor: state.backgroundColor, dim: false };
 }
 
 function blockquoteStyle(state: StepRenderState): InlineStyle {
   if (state.hasDelete) {
-    return { color: "red", backgroundColor: state.backgroundColor, dim: !state.highlighted };
+    return { color: "red", backgroundColor: state.backgroundColor };
   }
-  return { color: "gray", backgroundColor: state.backgroundColor, dim: true };
+  return { color: "gray", backgroundColor: state.backgroundColor, dim: false };
 }
 
 function annotationStyle(annotation: Annotation, state: StepRenderState): InlineStyle {
   return {
     color: TYPE_COLORS[annotation.type],
     backgroundColor: state.backgroundColor,
-    dim: !state.highlighted,
+    dim: false,
   };
 }
+
+function highlightCodeLine(
+  line: string,
+  language: string | undefined,
+  state: StepRenderState,
+): Segment[] {
+  const base = codeStyle(state);
+  if (state.hasDelete) {
+    return [{ text: line, ...base }];
+  }
+
+  const segments: Segment[] = [];
+  const tokenPattern =
+    /(\/\/.*$|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[$A-Z_a-z][$\w-]*\b|[^\w"'`/]+|\/)/g;
+
+  for (const match of line.matchAll(tokenPattern)) {
+    const token = match[0];
+    const index = match.index ?? 0;
+    const style = codeTokenStyle(token, line, index, language, base);
+    segments.push({ text: token, ...style });
+  }
+
+  return segments.length > 0 ? segments : [{ text: line, ...base }];
+}
+
+function codeTokenStyle(
+  token: string,
+  line: string,
+  index: number,
+  language: string | undefined,
+  base: InlineStyle,
+): InlineStyle {
+  if (/^\/\//.test(token) || /^\/\*/.test(token)) {
+    return { ...base, color: "gray" };
+  }
+
+  if (/^["'`]/.test(token)) {
+    return { ...base, color: "green" };
+  }
+
+  if (/^\d/.test(token)) {
+    return { ...base, color: "yellow" };
+  }
+
+  if (/^[$A-Z_a-z][$\w-]*$/.test(token)) {
+    if (CODE_KEYWORDS.has(token)) {
+      return { ...base, color: "cyan", bold: true };
+    }
+
+    if (isCssPropertyToken(token, line, index, language)) {
+      return { ...base, color: "cyan" };
+    }
+
+    if (isObjectKeyToken(token, line, index)) {
+      return { ...base, color: "blue" };
+    }
+  }
+
+  return base;
+}
+
+function isCssPropertyToken(
+  token: string,
+  line: string,
+  index: number,
+  language: string | undefined,
+): boolean {
+  const normalized = (language ?? "").toLowerCase();
+  if (!["css", "scss", "sass", "less"].includes(normalized)) {
+    return false;
+  }
+
+  const afterToken = line.slice(index + token.length).trimStart();
+  return afterToken.startsWith(":");
+}
+
+function isObjectKeyToken(token: string, line: string, index: number): boolean {
+  const beforeToken = line.slice(0, index).trimEnd();
+  const afterToken = line.slice(index + token.length).trimStart();
+  return afterToken.startsWith(":") && !beforeToken.endsWith("?");
+}
+
+const CODE_KEYWORDS = new Set([
+  "as",
+  "async",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "default",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "from",
+  "function",
+  "if",
+  "import",
+  "in",
+  "interface",
+  "let",
+  "new",
+  "null",
+  "of",
+  "return",
+  "satisfies",
+  "switch",
+  "throw",
+  "true",
+  "try",
+  "type",
+  "typeof",
+  "undefined",
+  "var",
+  "while",
+]);
 
 function wrapSegments(
   segments: Segment[],
@@ -604,6 +740,44 @@ function wrapSegments(
   return rows
     .filter((row, index) => index === 0 || row.length > 0)
     .map((row) => ({ segments: row.length > 0 ? row : [{ text: " " }] }));
+}
+
+function wrapSegmentsPreservingWhitespace(
+  segments: Segment[],
+  width: number,
+  hangingIndent = 0,
+): Array<{ segments: Segment[] }> {
+  const safeWidth = Math.max(1, width);
+  const rows: Segment[][] = [[]];
+  let currentWidth = 0;
+  let currentRow = rows[0]!;
+
+  const startContinuationRow = () => {
+    const indent = " ".repeat(Math.min(hangingIndent, Math.max(0, safeWidth - 1)));
+    currentRow = indent ? [{ text: indent }] : [];
+    rows.push(currentRow);
+    currentWidth = indent.length;
+  };
+
+  for (const segment of segments) {
+    for (const char of segment.text) {
+      if (char === "\n") {
+        startContinuationRow();
+        continue;
+      }
+
+      if (currentWidth >= safeWidth) {
+        startContinuationRow();
+      }
+
+      appendChar(currentRow, char, segment);
+      currentWidth += 1;
+    }
+  }
+
+  return rows.map((row) => ({
+    segments: row.length > 0 ? row : [{ text: " " }],
+  }));
 }
 
 function appendText(row: Segment[], text: string, source: Segment): void {
