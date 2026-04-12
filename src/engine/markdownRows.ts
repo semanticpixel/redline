@@ -16,9 +16,14 @@ type StepRenderState = {
   highlighted: boolean;
   backgroundColor?: Segment["backgroundColor"];
   hasDelete: boolean;
+  annotationColor?: Segment["color"];
 };
 
 type InlineStyle = Omit<Segment, "text">;
+type AnnotationBadge = {
+  text: string;
+  color: Segment["color"];
+};
 
 type ComputeMarkdownRowsOptions = {
   selectedStepIndices?: Iterable<number>;
@@ -37,6 +42,8 @@ const TYPE_ICONS: Record<Annotation["type"], string> = {
   delete: "🗑️",
   replace: "✏️",
 };
+
+const ANNOTATION_TYPE_PRIORITY: Annotation["type"][] = ["delete", "replace", "question", "comment"];
 
 export function computeMarkdownRows(
   steps: PlanStep[],
@@ -58,17 +65,19 @@ export function computeMarkdownRows(
     const selected = selectedStepIndices.size > 0
       ? selectedStepIndices.has(index)
       : isSelected(index, activeIndex, selectionAnchor);
+    const annotationType = prioritizedAnnotationType(step.annotations);
     const state: StepRenderState = {
       active,
       selected,
       highlighted: active || selected,
       backgroundColor: selected && !active ? "gray" : undefined,
-      hasDelete: step.annotations.some((annotation) => annotation.type === "delete"),
+      hasDelete: annotationType === "delete",
+      annotationColor: annotationType ? TYPE_COLORS[annotationType] : undefined,
     };
     const prefixLength = 2 + gutterWidth + 1 + 2;
     const prefixPadding = " ".repeat(prefixLength);
     const availableWidth = Math.max(1, width - prefixLength);
-    const firstLineSuffix = step.annotations.length > 0 ? ` [${step.annotations.length}]` : "";
+    const firstLineBadge = annotationBadge(step.annotations);
     const logicalRows = renderStepMarkdown(step, state);
 
     if (index > 0 && startsWithHeading(step)) {
@@ -87,7 +96,7 @@ export function computeMarkdownRows(
       gutterWidth,
       prefixPadding,
       availableWidth,
-      firstLineSuffix,
+      firstLineBadge,
       stepIndex: index,
     });
 
@@ -120,7 +129,7 @@ function addLogicalRows({
   gutterWidth,
   prefixPadding,
   availableWidth,
-  firstLineSuffix,
+  firstLineBadge,
   stepIndex,
 }: {
   rows: RenderedRow[];
@@ -131,25 +140,25 @@ function addLogicalRows({
   gutterWidth: number;
   prefixPadding: string;
   availableWidth: number;
-  firstLineSuffix: string;
+  firstLineBadge: AnnotationBadge | null;
   stepIndex: number;
 }): void {
   const contentRows = logicalRows.length > 0 ? logicalRows : [plainTextRow(step.content, bodyStyle(state))];
   let paintedAnyRow = false;
 
   contentRows.forEach((logicalRow, logicalRowIndex) => {
-    const suffix = !paintedAnyRow ? firstLineSuffix : "";
+    const badge = !paintedAnyRow ? firstLineBadge : null;
     const wrappedRows = logicalRow.blank
       ? [{ segments: [{ text: " " }], blank: true }]
       : logicalRow.preserveWhitespace
         ? wrapSegmentsPreservingWhitespace(
             logicalRow.segments,
-            Math.max(1, availableWidth - suffix.length),
+            Math.max(1, availableWidth - (badge?.text.length ?? 0)),
             logicalRow.hangingIndent ?? 0,
           )
         : wrapSegments(
             logicalRow.segments,
-            Math.max(1, availableWidth - suffix.length),
+            Math.max(1, availableWidth - (badge?.text.length ?? 0)),
             logicalRow.hangingIndent ?? 0,
           );
 
@@ -161,10 +170,10 @@ function addLogicalRows({
 
       segments.push(...wrappedRow.segments);
 
-      if (isFirstStepRow && suffix) {
+      if (isFirstStepRow && badge) {
         segments.push({
-          text: suffix,
-          color: "red",
+          text: badge.text,
+          color: badge.color,
           backgroundColor: state.backgroundColor,
           bold: true,
         });
@@ -230,9 +239,9 @@ function buildFirstPrefix(
 ): Segment[] {
   return [
     {
-      text: state.selected && !state.active ? "┃ " : "  ",
-      color: state.selected && !state.active ? "blue" : undefined,
-      bold: state.selected && !state.active,
+      text: state.annotationColor ? "┃ " : "  ",
+      color: state.annotationColor,
+      bold: Boolean(state.annotationColor),
     },
     {
       text: `${String(index + 1).padStart(gutterWidth, " ")} `,
@@ -476,7 +485,7 @@ function renderInline(tokens: Token[], style: InlineStyle, fallback = ""): Segme
         segments.push({
           text: (token as Tokens.Codespan).text,
           ...style,
-          color: "yellow",
+          color: style.color === "red" ? style.color : "yellow",
         });
         break;
       case "link": {
@@ -550,6 +559,29 @@ function annotationStyle(annotation: Annotation, state: StepRenderState): Inline
     backgroundColor: state.backgroundColor,
     dim: false,
   };
+}
+
+function annotationBadge(annotations: Annotation[]): AnnotationBadge | null {
+  const type = prioritizedAnnotationType(annotations);
+
+  if (!type) {
+    return null;
+  }
+
+  return {
+    text: ` [${annotations.length}]`,
+    color: TYPE_COLORS[type],
+  };
+}
+
+function prioritizedAnnotationType(annotations: Annotation[]): Annotation["type"] | null {
+  if (annotations.length === 0) {
+    return null;
+  }
+
+  return ANNOTATION_TYPE_PRIORITY.find((candidate) =>
+    annotations.some((annotation) => annotation.type === candidate),
+  ) ?? "comment";
 }
 
 function highlightCodeLine(

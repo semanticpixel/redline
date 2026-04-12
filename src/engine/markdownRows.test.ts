@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { PlanStep } from "../types.js";
+import type { Annotation, PlanStep } from "../types.js";
 import { computeMarkdownRows } from "./markdownRows.js";
 import type { RenderedRow } from "./renderTypes.js";
 
@@ -12,6 +12,18 @@ function step(content: string): PlanStep {
     depth: 1,
     annotations: [],
   };
+}
+
+function annotatedStep(content: string, types: Annotation["type"][]): PlanStep {
+  const planStep = step(content);
+  planStep.annotations.push(
+    ...types.map((type, index) => ({
+      id: `${planStep.id}-${type}-${index}`,
+      type,
+      text: `${type} note`,
+    })),
+  );
+  return planStep;
 }
 
 function rowText(row: RenderedRow): string {
@@ -126,6 +138,80 @@ function rowTexts(rows: RenderedRow[]): string[] {
 
   assert.doesNotMatch(text, /c\n\s*ompatibility/);
   assert.match(text, /compatibility/);
+}
+
+{
+  const cases: Array<{ types: Annotation["type"][]; color: string }> = [
+    { types: ["comment"], color: "yellow" },
+    { types: ["question"], color: "cyan" },
+    { types: ["replace"], color: "green" },
+    { types: ["delete"], color: "red" },
+    { types: ["comment", "question"], color: "cyan" },
+    { types: ["question", "replace"], color: "green" },
+    { types: ["replace", "delete"], color: "red" },
+  ];
+
+  for (const { types, color } of cases) {
+    const layout = computeMarkdownRows(
+      [annotatedStep("Badge priority", types)],
+      null,
+      null,
+      80,
+    );
+    const badge = layout.rows[0]?.segments.find((segment) => segment.text === ` [${types.length}]`);
+
+    assert.equal(badge?.color, color);
+    assert.equal(badge?.bold, true);
+  }
+}
+
+{
+  const layout = computeMarkdownRows(
+    [step("Selected only"), annotatedStep("Annotated only", ["question"])],
+    null,
+    null,
+    80,
+    { selectedStepIndices: [0] },
+  );
+  const selectedMarker = layout.rows.find((row) => row.stepIndex === 0 && row.role === "content")?.segments[0];
+  const annotatedMarker = layout.rows.find((row) => row.stepIndex === 1 && row.role === "content")?.segments[0];
+
+  assert.equal(selectedMarker?.text, "  ");
+  assert.equal(selectedMarker?.color, undefined);
+  assert.equal(annotatedMarker?.text, "┃ ");
+  assert.equal(annotatedMarker?.color, "cyan");
+}
+
+{
+  const nonDeleteTypes: Annotation["type"][] = ["comment", "question", "replace"];
+
+  for (const type of nonDeleteTypes) {
+    const layout = computeMarkdownRows(
+      [annotatedStep("Keep `code` normal", [type])],
+      null,
+      null,
+      80,
+    );
+    const contentSegments = layout.rows.find((row) => row.role === "content")?.segments ?? [];
+
+    assert.ok(contentSegments.some((segment) => segment.text.includes("Keep") && segment.color === "gray"));
+    assert.ok(contentSegments.some((segment) => segment.text.includes("code") && segment.color === "yellow"));
+    assert.ok(!contentSegments.some((segment) => segment.text.includes("Keep") && segment.color === "red"));
+  }
+}
+
+{
+  const layout = computeMarkdownRows(
+    [annotatedStep("Delete `code` now", ["delete"])],
+    null,
+    null,
+    80,
+  );
+  const contentSegments = layout.rows.find((row) => row.role === "content")?.segments ?? [];
+
+  assert.ok(contentSegments.some((segment) => segment.text.includes("Delete") && segment.color === "red"));
+  assert.ok(contentSegments.some((segment) => segment.text.includes("code") && segment.color === "red"));
+  assert.ok(!contentSegments.some((segment) => segment.text.includes("code") && segment.color === "yellow"));
 }
 
 {
