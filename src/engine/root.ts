@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import MiniInk, { type InkOptions } from "./ink.js";
+import MiniRuntime, { type RuntimeOptions } from "./runtime.js";
 
 export interface Root {
   render(node: ReactNode): void;
@@ -7,16 +7,19 @@ export interface Root {
   waitUntilExit(): Promise<void>;
 }
 
-export async function createRoot(options: InkOptions = {}): Promise<Root> {
-  const ink = new MiniInk(options);
+export async function createRoot(options: RuntimeOptions = {}): Promise<Root> {
+  const runtime = new MiniRuntime(options);
   return {
-    render: ink.render,
-    unmount: ink.unmount,
-    waitUntilExit: ink.waitUntilExit,
+    render: runtime.render,
+    unmount: runtime.unmount,
+    waitUntilExit: runtime.waitUntilExit,
   };
 }
 
-export async function render(node: ReactNode, options: InkOptions = {}): Promise<Root> {
+export async function render(
+  node: ReactNode,
+  options: RuntimeOptions = {},
+): Promise<Root> {
   const root = await createRoot(options);
   root.render(node);
   return root;

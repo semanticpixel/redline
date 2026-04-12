@@ -1,77 +1,47 @@
 # redline
 
-Terminal-native plan annotator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Review, comment, and redline AI-generated plans without leaving your terminal.
+Terminal-native plan annotator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Review, select, and redline AI-generated plans without leaving your terminal.
 
-```
-▌ redline — plan review
+```text
+▌ redline - plan review
 Plan: Migrate clima-web from Yarn 4 to pnpm
 ────────────────────────────────────────────────────────
  1   # Plan: Migrate clima-web from Yarn 4 to pnpm
- 2   ## Context
- 3   ## Steps
- 4   ### 1. Delete Yarn-specific files
- 5   - `.pnp.cjs` — Yarn PnP runtime
- 6   - `.yarn/` — contains `install-state.gz`
- 7   - `yarn.lock` — Yarn lockfile
- 8 ▸ ### 2. Update `package.json`                    [1]
- │   💬 Use pnpm --version to get the exact version
- 9   ### 3. Update `.gitignore`
-10   ### 4. Install dependencies with pnpm
-11   ## Files modified
-12   ## Verification                                  [5]
+
+ 2   Context
+
+     The app currently uses a custom auth system. We need to migrate
+     to OAuth 2.0 while keeping existing sessions compatible.
+
+ 3   Phase 1: Database Schema Changes
+
+ 4   1. Create auth_providers table
+
+     Store provider configuration for Google, GitHub, and Microsoft.
 ────────────────────────────────────────────────────────
-Step 8/15  5 annotations
-↑↓ navigate  Shift+↑↓ select  c comment  ? question  d delete  r replace
-u undo last  Enter send feedback  q quit
+Drag select text to annotate
+wheel/Page scroll  drag/Shift-click select  c comment  ? question  d delete
+u undo  Esc clear  Enter approve/send feedback  q quit
 ```
-
-## Demo
-
-**Plan loads — all steps visible at a glance**
-![Plan loaded in redline TUI](assets/01-plan-loaded.png)
-
-**Navigate to a step to expand its full content**
-![Step expanded inline](assets/02-step-expanded.png)
-
-**Press `c` to add a comment — type and hit Enter**
-![Typing a comment annotation](assets/03-adding-comment.png)
-
-**Comment saved — badge shows annotation count, text visible inline**
-![Comment saved with badge](assets/04-comment-saved.png)
-
-**`Shift+↑↓` to multi-select steps, then `r` to replace them all at once**
-![Multi-select replace across 4 steps](assets/05-multiselect-replace.png)
-
-**Overview after annotating — badges across 6 steps**
-![Annotations overview](assets/06-annotations-overview.png)
-
-**Press `Enter` — Claude receives your feedback and revises the plan**
-![Claude's revised plan](assets/07-claude-revised-plan.png)
-
-**redline intercepts the revised plan — annotate again or approve**
-![Delete annotation on revised plan](assets/08-delete-annotation.png)
 
 ## Why
 
-Claude Code's plan mode is powerful, but reviewing and giving feedback on plans is painful. You have to read the plan, then type out references to specific steps when you have comments. VS Code extensions solve this with inline annotations, but if you work in the terminal, you're out of luck.
-
-**redline** hooks directly into Claude Code's plan lifecycle. When Claude finishes a plan, redline intercepts it and opens an interactive TUI where you can navigate steps, add comments, flag questions, mark deletions, and suggest replacements — then send all your feedback back to Claude with a single keypress.
+Claude Code's plan mode is powerful, but terminal review can become awkward once you need to point at specific parts of a plan. Redline hooks into Claude Code's plan lifecycle, opens a terminal review UI, lets you select plan content, attach comments/questions/deletes/replacements, and sends structured feedback back to Claude Code with one keypress.
 
 ## Features
 
-- **Zero context switching** — stays in your terminal, no browser
-- **Inline annotations** — comment, question, delete, or replace any step
-- **Multi-select** — `Shift+↑↓` to select a range, annotate all at once
-- **Smart submit** — `Enter` approves if clean, sends feedback if annotated
-- **Delete toggle** — `d` marks/unmarks steps for deletion (no stacking)
-- **Visual hierarchy** — headings render in cyan, body content in gray
-- **Automatic hook** — intercepts `ExitPlanMode` via Claude Code's `PermissionRequest` hook
-- **Feedback loop** — Claude receives structured feedback and revises the plan; redline intercepts again
+- **Terminal-native review** - stays in your terminal, no browser required.
+- **Scroll-first workflow** - use the mouse wheel, PageUp/PageDown, Home, and End instead of step-by-step arrow navigation.
+- **Drag selection** - select plan rows with the mouse, extend with Shift-click, then annotate the touched parsed steps.
+- **Inline annotations** - comment, question, delete, or replace selected plan steps.
+- **Markdown-aware rendering** - headings, paragraphs, lists, code fences, inline code, and spacing render from Markdown tokens.
+- **No-flicker custom engine** - React reconciler, Yoga layout, screen buffer diffing, and ANSI patch writes.
+- **Feedback loop** - Claude receives structured feedback, revises the plan, and Redline can intercept the revised plan again.
 
 ## Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/redline.git
+git clone https://github.com/semanticpixel/redline.git
 cd redline
 pnpm install
 pnpm build
@@ -80,7 +50,7 @@ chmod +x redline-hook.sh
 
 ## Setup
 
-Add the hook to `~/.claude/settings.json`, using the **absolute path** to your `redline-hook.sh`:
+Add the hook to `~/.claude/settings.json`, using the absolute path to your `redline-hook.sh`:
 
 ```json
 {
@@ -101,30 +71,30 @@ Add the hook to `~/.claude/settings.json`, using the **absolute path** to your `
 }
 ```
 
-**Restart Claude Code** after adding the hook.
+Restart Claude Code after adding the hook.
 
 ### Why a wrapper script?
 
-Claude Code hooks run as background processes without a TTY (no terminal attached). An interactive TUI like Ink needs a real terminal for keyboard input and screen rendering. `redline-hook.sh` bridges this gap: it saves the plan data, opens a new terminal tab, runs the TUI there, and pipes your response back to Claude Code when you're done.
+Claude Code hooks run as background processes without a controlling TTY. Redline needs a real terminal for raw keyboard input, mouse reporting, alternate-screen rendering, and ANSI output. `redline-hook.sh` bridges that gap by saving the hook payload, opening a terminal tab, running Redline there, and relaying the final hook response back to Claude Code.
 
 ## Usage
 
-### With Claude Code (automatic)
+### With Claude Code
 
-1. Enter plan mode in Claude Code (`Shift+Tab`)
-2. Give Claude a task — it generates a plan
-3. When Claude calls `ExitPlanMode`, redline opens in a new terminal tab
-4. Review and annotate the plan
-5. Press `Enter` — the tab closes and Claude receives your feedback
-6. Claude revises the plan → redline intercepts again for another review cycle
+1. Enter plan mode in Claude Code.
+2. Ask Claude to generate a plan.
+3. When Claude calls `ExitPlanMode`, Redline opens in a terminal tab.
+4. Scroll, drag-select plan content, and add annotations.
+5. Press `Enter` to approve if there are no annotations or send feedback if there are annotations.
+6. Claude revises the plan, and Redline can intercept the next review cycle.
 
-### Demo mode (standalone)
+### Standalone demo
 
 ```bash
 # Run with a built-in sample plan
 node dist/bin/index.js
 
-# Pipe a custom plan (simulates Claude Code's hook payload)
+# Pipe a custom plan, simulating Claude Code's hook payload
 jq -n '{
   session_id: "test",
   tool_name: "ExitPlanMode",
@@ -134,9 +104,7 @@ jq -n '{
 }' | node dist/bin/index.js
 ```
 
-### Testing with a realistic plan
-
-A multi-phase plan with embedded code snippets (SQL, TypeScript, TSX) is included for manual testing:
+### Markdown-heavy manual test
 
 ```bash
 pnpm build
@@ -149,24 +117,27 @@ This exercises heading hierarchy, inline code, fenced code blocks, and multi-lin
 
 ## Keybindings
 
-| Key | Action |
-|-----|--------|
-| `↑` / `↓` or `j` / `k` | Navigate between steps |
-| `Shift+↑` / `Shift+↓` | Extend selection (multi-select) |
-| `c` | Add a comment to the current step (or selection) |
-| `?` | Flag a step with a question |
-| `d` | Toggle delete mark (press again to unmark) |
-| `r` | Suggest a replacement for a step |
-| `u` | Undo the last annotation on the current step |
-| `Esc` | Cancel annotation input / clear selection |
-| `Enter` | Submit — approves if no annotations, sends feedback if annotated |
-| `q` | Quit without sending anything |
+| Input | Action |
+|-------|--------|
+| Mouse wheel | Scroll the plan viewport |
+| Drag | Select rendered plan rows |
+| Shift-click | Extend the current row selection |
+| PageUp / PageDown | Scroll one viewport |
+| Home / End | Jump to top or bottom |
+| `c` | Add a comment to selected steps |
+| `?` | Add a question to selected steps |
+| `d` | Toggle delete on selected steps |
+| `r` | Suggest a replacement for selected steps |
+| `u` | Undo the latest annotation on selected steps |
+| `Esc` | Clear selection or cancel annotation input |
+| `Enter` | Approve if clean, or send feedback if annotated |
+| `q` / Ctrl-C | Quit without sending feedback |
 
 ## How feedback works
 
-When you annotate steps and press `Enter`, redline formats your annotations into structured feedback that Claude can act on:
+When you annotate steps and press `Enter`, Redline formats your annotations into structured feedback that Claude can act on:
 
-```
+```text
 Plan feedback from redline review:
 
 On step: "### 2. Update `package.json`"
@@ -176,38 +147,28 @@ On step: "### 3. Update `.gitignore`"
   ❓ Question: Should we also add .pnpm-debug.log?
 
 On step: "## Verification"
-  🗑️  Remove this step: We'll verify manually
+  🗑️  Remove this step
 
 Please revise the plan addressing the above annotations, then present the updated plan.
 ```
 
-Claude then revises the plan and presents it again. Redline intercepts for another review cycle until you approve.
+Claude revises the plan and presents it again. Redline intercepts for another review cycle until you approve.
 
 ## Supported terminals
 
 | Terminal | Platform | Status |
 |----------|----------|--------|
-| iTerm2 | macOS | ✅ Opens a new tab in current window |
-| Terminal.app | macOS | ✅ Fallback |
-| gnome-terminal | Linux | ✅ |
-| kitty | Linux | ✅ |
-| alacritty | Linux | ✅ |
+| iTerm2 | macOS | Opens a new tab in the current window |
+| Terminal.app | macOS | Fallback |
+| gnome-terminal | Linux | Supported |
+| kitty | Linux | Supported |
+| alacritty | Linux | Supported |
 
 ## Requirements
 
 - Node.js 20+
 - pnpm
 - Claude Code 2.1+
-
-## Roadmap
-
-- [ ] Reorder steps (`Shift+j/k`)
-- [ ] Add new steps inline
-- [ ] Plan diffing between revision cycles
-- [ ] Persistent annotation history
-- [ ] `curl | bash` install script
-- [ ] npm/Homebrew distribution
-- [ ] Team sharing via URL
 
 ## License
 

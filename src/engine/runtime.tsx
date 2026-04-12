@@ -24,14 +24,14 @@ type MouseListener = {
   isActive: boolean;
 };
 
-export type InkOptions = {
+export type RuntimeOptions = {
   stdout?: NodeJS.WriteStream;
   stdin?: NodeJS.ReadStream;
   stderr?: NodeJS.WriteStream;
   onFrame?: (event: FrameEvent) => void;
 };
 
-export default class MiniInk {
+export default class MiniRuntime {
   private readonly stdout: NodeJS.WriteStream;
   private readonly stdin: NodeJS.ReadStream;
   private readonly stderr: NodeJS.WriteStream;
@@ -49,7 +49,7 @@ export default class MiniInk {
   private readonly exitPromise: Promise<void>;
   private resolveExit!: () => void;
 
-  constructor(private readonly options: InkOptions = {}) {
+  constructor(private readonly options: RuntimeOptions = {}) {
     this.stdout = options.stdout ?? process.stdout;
     this.stdin = options.stdin ?? process.stdin;
     this.stderr = options.stderr ?? process.stderr;
