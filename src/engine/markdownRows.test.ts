@@ -54,7 +54,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
 
 {
   const layout = computeMarkdownRows(
-    [step("## Architecture\n\n```ts\nconst x = 1;\n  y();\n```")],
+    [step("## Architecture\n\n```ts\nconst   x = 1;\n  y();\n    nested();\n```")],
     0,
     null,
     100,
@@ -62,8 +62,43 @@ function rowTexts(rows: RenderedRow[]): string[] {
   const text = rowTexts(layout.rows).join("\n");
 
   assert.match(text, /Architecture/);
-  assert.match(text, /const x = 1;/);
+  assert.match(text, /const   x = 1;/);
   assert.match(text, /  y\(\);/);
+  assert.match(text, /    nested\(\);/);
+}
+
+{
+  const layout = computeMarkdownRows(
+    [step("```ts\nconst answer = 42;\nconst message = \"ok\";\n```")],
+    0,
+    null,
+    100,
+  );
+  const rows = layout.rows;
+
+  assert.ok(
+    rows.some((row) =>
+      row.segments.some(
+        (segment) => segment.text.includes("const") && segment.color === "cyan" && segment.bold,
+      ),
+    ),
+  );
+  assert.ok(
+    rows.some((row) =>
+      row.segments.some((segment) => segment.text.includes("42") && segment.color === "yellow"),
+    ),
+  );
+  assert.ok(
+    rows.some((row) =>
+      row.segments.some((segment) => segment.text.includes("\"ok\"") && segment.color === "green"),
+    ),
+  );
+  assert.ok(
+    rows
+      .flatMap((row) => row.segments)
+      .filter((segment) => segment.text.trim().length > 0)
+      .every((segment) => segment.dim !== true),
+  );
 }
 
 {
@@ -76,7 +111,7 @@ function rowTexts(rows: RenderedRow[]): string[] {
   const firstRow = layout.rows[0]!;
 
   assert.ok(firstRow.segments.some((segment) => segment.text.includes("bold") && segment.bold));
-  assert.ok(firstRow.segments.some((segment) => segment.text.includes("em") && segment.dim));
+  assert.ok(firstRow.segments.some((segment) => segment.text.includes("em") && segment.dim !== true));
   assert.ok(firstRow.segments.some((segment) => segment.text.includes("code") && segment.color === "yellow"));
 }
 

@@ -90,7 +90,8 @@ The goal is to make Redline the best way to review AI-generated plans.
 - [ ] Read the plan file from `planFilePath` when present.
 - [ ] Extract and highlight files mentioned by the plan.
 - [ ] Open file paths in `$EDITOR`.
-- [ ] Add optional syntax highlighting for fenced code blocks.
+- [x] Add lightweight terminal-palette syntax highlighting for fenced code blocks.
+- [ ] Consider language-grade syntax highlighting for fenced code blocks.
 
 ## v0.5 - Team & Collaboration
 
