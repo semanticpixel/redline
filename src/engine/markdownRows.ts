@@ -19,6 +19,10 @@ type StepRenderState = {
 
 type InlineStyle = Omit<Segment, "text">;
 
+type ComputeMarkdownRowsOptions = {
+  selectedStepIndices?: Iterable<number>;
+};
+
 const TYPE_COLORS: Record<Annotation["type"], "yellow" | "cyan" | "red" | "green"> = {
   comment: "yellow",
   question: "cyan",
@@ -35,20 +39,24 @@ const TYPE_ICONS: Record<Annotation["type"], string> = {
 
 export function computeMarkdownRows(
   steps: PlanStep[],
-  activeIndex: number,
+  activeIndex: number | null,
   selectionAnchor: number | null,
   width: number,
+  options: ComputeMarkdownRowsOptions = {},
 ): RowLayout {
   const rows: RenderedRow[] = [];
   const stepStartRow: number[] = [];
   const stepRowCount: number[] = [];
   const totalSteps = steps.length;
   const gutterWidth = String(totalSteps).length;
+  const selectedStepIndices = new Set(options.selectedStepIndices ?? []);
 
   for (let index = 0; index < totalSteps; index++) {
     const step = steps[index]!;
-    const active = index === activeIndex;
-    const selected = isSelected(index, activeIndex, selectionAnchor);
+    const active = activeIndex !== null && index === activeIndex;
+    const selected = selectedStepIndices.size > 0
+      ? selectedStepIndices.has(index)
+      : isSelected(index, activeIndex, selectionAnchor);
     const state: StepRenderState = {
       active,
       selected,
@@ -79,6 +87,7 @@ export function computeMarkdownRows(
       prefixPadding,
       availableWidth,
       firstLineSuffix,
+      stepIndex: index,
     });
 
     addAnnotationRows({
@@ -88,6 +97,7 @@ export function computeMarkdownRows(
       prefixPadding,
       width,
       prefixLength,
+      stepIndex: index,
     });
 
     stepRowCount.push(Math.max(1, rows.length - startLength));
@@ -110,6 +120,7 @@ function addLogicalRows({
   prefixPadding,
   availableWidth,
   firstLineSuffix,
+  stepIndex,
 }: {
   rows: RenderedRow[];
   logicalRows: LogicalRow[];
@@ -120,6 +131,7 @@ function addLogicalRows({
   prefixPadding: string;
   availableWidth: number;
   firstLineSuffix: string;
+  stepIndex: number;
 }): void {
   const contentRows = logicalRows.length > 0 ? logicalRows : [plainTextRow(step.content, bodyStyle(state))];
   let paintedAnyRow = false;
@@ -154,6 +166,8 @@ function addLogicalRows({
       rows.push({
         key: `step-${step.id}-md-${logicalRowIndex}-${wrappedIndex}`,
         segments,
+        stepIndex,
+        role: "content",
       });
       paintedAnyRow = true;
     });
@@ -167,6 +181,7 @@ function addAnnotationRows({
   prefixPadding,
   width,
   prefixLength,
+  stepIndex,
 }: {
   rows: RenderedRow[];
   step: PlanStep;
@@ -174,6 +189,7 @@ function addAnnotationRows({
   prefixPadding: string;
   width: number;
   prefixLength: number;
+  stepIndex: number;
 }): void {
   step.annotations.forEach((annotation, annotationIndex) => {
     const wrapped = wrapSegments(
@@ -183,6 +199,8 @@ function addAnnotationRows({
     wrapped.forEach((chunk, chunkIndex) => {
       rows.push({
         key: `step-${step.id}-annotation-${annotationIndex}-${chunkIndex}`,
+        stepIndex,
+        role: "annotation",
         segments: [
           { text: `${prefixPadding}  ` },
           {
@@ -211,8 +229,8 @@ function buildFirstPrefix(
     },
     {
       text: `${String(index + 1).padStart(gutterWidth, " ")} `,
-      color: state.active ? "yellow" : "gray",
-      dim: !state.active,
+      color: state.highlighted ? "yellow" : "gray",
+      dim: !state.highlighted,
     },
     {
       text: state.active ? "▸ " : "  ",
@@ -228,6 +246,7 @@ function addBlankRenderedRow(rows: RenderedRow[], key: string): void {
   }
   rows.push({
     key,
+    role: "spacer",
     segments: [{ text: " " }],
   });
 }
@@ -685,8 +704,8 @@ function textFromUnknownToken(token: Token): string {
   return token.raw ?? "";
 }
 
-function isSelected(index: number, activeIndex: number, selectionAnchor: number | null): boolean {
-  if (selectionAnchor === null) {
+function isSelected(index: number, activeIndex: number | null, selectionAnchor: number | null): boolean {
+  if (activeIndex === null || selectionAnchor === null) {
     return false;
   }
   const start = Math.min(activeIndex, selectionAnchor);

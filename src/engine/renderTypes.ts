@@ -11,6 +11,8 @@ export type Segment = {
 export type RenderedRow = {
   key: string;
   segments: Segment[];
+  stepIndex?: number;
+  role?: "content" | "annotation" | "spacer";
 };
 
 export type RowLayout = {

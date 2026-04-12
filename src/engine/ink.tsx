@@ -5,13 +5,21 @@ import { createContainer, reconciler } from "./reconciler.js";
 import type { Frame, FrameEvent } from "./frame.js";
 import { diffFrames } from "./log-update.js";
 import { computeYogaLayout } from "./layout/yoga.js";
+import { parseSgrMousePackets } from "./mouse.js";
+import type { MouseEvent } from "./mouse.js";
 import { renderTree } from "./renderer.js";
-import { exitAltScreen, enterAltScreen, writeTerminal } from "./terminal.js";
+import { disableMouseReporting, enableMouseReporting, exitAltScreen, enterAltScreen, writeTerminal } from "./terminal.js";
 import { InputContext, type InputHandler, type InputKey } from "./hooks/useInput.js";
+import { MouseContext, type MouseHandler } from "./hooks/useMouse.js";
 import { TerminalSizeContext } from "./hooks/useTerminalSize.js";
 
 type Listener = {
   handler: InputHandler;
+  isActive: boolean;
+};
+
+type MouseListener = {
+  handler: MouseHandler;
   isActive: boolean;
 };
 
@@ -29,10 +37,12 @@ export default class MiniInk {
   private readonly rootNode;
   private readonly container: any;
   private readonly listeners: Listener[] = [];
+  private readonly mouseListeners: MouseListener[] = [];
   private renderQueued = false;
   private currentNode: ReactNode = null;
   private currentFrame: Frame | null = null;
   private altScreenActive = false;
+  private mouseBuffer = "";
   private frameCount = 0;
   private readonly exitPromise: Promise<void>;
   private resolveExit!: () => void;
@@ -59,6 +69,7 @@ export default class MiniInk {
       this.stdin.setRawMode?.(true);
     }
     this.stdin.on("keypress", this.handleKeypress);
+    this.stdin.on("data", this.handleData);
     this.stdout.on("resize", this.handleResize);
     process.on("exit", this.cleanupTerminal);
   }
@@ -84,14 +95,20 @@ export default class MiniInk {
           subscribe: (handler, config) => this.subscribeInput(handler, config),
         }}
       >
-        <TerminalSizeContext.Provider
+        <MouseContext.Provider
           value={{
-            columns: this.stdout.columns || 80,
-            rows: this.stdout.rows || 24,
+            subscribe: (handler, config) => this.subscribeMouse(handler, config),
           }}
         >
-          {node}
-        </TerminalSizeContext.Provider>
+          <TerminalSizeContext.Provider
+            value={{
+              columns: this.stdout.columns || 80,
+              rows: this.stdout.rows || 24,
+            }}
+          >
+            {node}
+          </TerminalSizeContext.Provider>
+        </MouseContext.Provider>
       </InputContext.Provider>
     );
   }
@@ -109,6 +126,23 @@ export default class MiniInk {
       const index = this.listeners.indexOf(listener);
       if (index >= 0) {
         this.listeners.splice(index, 1);
+      }
+    };
+  }
+
+  private subscribeMouse(
+    handler: MouseHandler,
+    options?: { isActive?: boolean },
+  ): () => void {
+    const listener: MouseListener = {
+      handler,
+      isActive: options?.isActive ?? true,
+    };
+    this.mouseListeners.push(listener);
+    return () => {
+      const index = this.mouseListeners.indexOf(listener);
+      if (index >= 0) {
+        this.mouseListeners.splice(index, 1);
       }
     };
   }
@@ -135,6 +169,7 @@ export default class MiniInk {
   private onRender(): void {
     if (this.rootNode.wantsAltScreen && !this.altScreenActive) {
       enterAltScreen(this.stdout);
+      enableMouseReporting(this.stdout);
       this.altScreenActive = true;
     }
 
@@ -176,6 +211,10 @@ export default class MiniInk {
   }
 
   private handleKeypress = (input: string, key: readline.Key): void => {
+    if (input?.startsWith("\u001b[<")) {
+      return;
+    }
+
     const normalized: InputKey = {
       upArrow: key.name === "up",
       downArrow: key.name === "down",
@@ -204,6 +243,26 @@ export default class MiniInk {
     }
   };
 
+  private handleData = (data: Buffer | string): void => {
+    this.mouseBuffer += data.toString();
+    const parsed = parseSgrMousePackets(this.mouseBuffer);
+    this.mouseBuffer = parsed.rest.slice(-128);
+
+    for (const event of parsed.events) {
+      this.dispatchMouse(event);
+    }
+  };
+
+  private dispatchMouse(event: MouseEvent): void {
+    for (let index = this.mouseListeners.length - 1; index >= 0; index--) {
+      const listener = this.mouseListeners[index]!;
+      if (!listener.isActive) {
+        continue;
+      }
+      listener.handler(event);
+    }
+  }
+
   private handleResize = (): void => {
     if (this.currentNode) {
       this.render(this.currentNode);
@@ -212,6 +271,7 @@ export default class MiniInk {
 
   private cleanup = (): void => {
     this.stdin.off("keypress", this.handleKeypress);
+    this.stdin.off("data", this.handleData);
     this.stdout.off("resize", this.handleResize);
     this.cleanupTerminal();
     this.resolveExit();
@@ -222,6 +282,7 @@ export default class MiniInk {
       this.stdin.setRawMode?.(false);
     }
     if (this.altScreenActive) {
+      disableMouseReporting(this.stdout);
       exitAltScreen(this.stdout);
       this.altScreenActive = false;
     }
