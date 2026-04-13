@@ -148,7 +148,13 @@ export function markDamage(screen: Screen, rect: Rect): void {
   };
 }
 
-export function rowEquals(previous: Screen, next: Screen, row: number): boolean {
+export function rowEquals(
+  previous: Screen,
+  previousStylePool: StylePool,
+  next: Screen,
+  nextStylePool: StylePool,
+  row: number,
+): boolean {
   if (previous.width !== next.width || previous.height !== next.height) {
     return false;
   }
@@ -157,10 +163,22 @@ export function rowEquals(previous: Screen, next: Screen, row: number): boolean 
     const index = getIndex(next, x, row);
     if (
       previous.chars[index] !== next.chars[index] ||
-      previous.styles[index] !== next.styles[index]
+      !cellStylesEqual(
+        previousStylePool.get(previous.styles[index] ?? previousStylePool.none),
+        nextStylePool.get(next.styles[index] ?? nextStylePool.none),
+      )
     ) {
       return false;
     }
   }
   return true;
+}
+
+function cellStylesEqual(left: CellStyle, right: CellStyle): boolean {
+  return (
+    left.color === right.color &&
+    left.backgroundColor === right.backgroundColor &&
+    left.bold === right.bold &&
+    left.dim === right.dim
+  );
 }

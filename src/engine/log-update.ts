@@ -28,7 +28,7 @@ export function diffFrames(previous: Frame | null, next: Frame): Patch[] {
   const patches: Patch[] = [];
 
   for (let row = startRow; row < endRow; row++) {
-    if (rowEquals(previous.screen, next.screen, row)) {
+    if (rowEquals(previous.screen, previous.stylePool, next.screen, next.stylePool, row)) {
       continue;
     }
     patches.push({

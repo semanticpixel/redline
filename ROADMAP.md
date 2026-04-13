@@ -20,7 +20,7 @@ The immediate goal is to make Redline reliable and pleasant enough to use on eve
 - [x] Render Markdown blocks with preserved spacing, lists, inline code, and fenced code blocks.
 - [x] Replace arrow-driven step navigation with scroll-first review.
 - [x] Add mouse wheel scrolling, drag selection, and Shift-click range extension.
-- [ ] Add exact Markdown source-span selection instead of mapping selected rows to whole parsed steps.
+- [x] Add exact Markdown source-span selection instead of mapping selected rows to whole parsed steps.
 - [ ] Add app-managed copy or excerpt preview for the selected rendered text.
 - [ ] Tune inactive contrast and heading hierarchy after more daily use.
 
@@ -30,7 +30,7 @@ The immediate goal is to make Redline reliable and pleasant enough to use on eve
 - [ ] Cycle through annotations on a selected step with `Tab`.
 - [ ] Multi-line annotation input.
 - [ ] Annotation preview before submitting.
-- [ ] Include selected excerpts in feedback once source-span metadata exists.
+- [x] Include selected excerpts in feedback once source-span metadata exists.
 
 ## v0.3 - Distribution & Shareability
 

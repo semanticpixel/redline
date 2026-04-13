@@ -32,8 +32,8 @@ Claude Code's plan mode is powerful, but terminal review can become awkward once
 
 - **Terminal-native review** - stays in your terminal, no browser required.
 - **Scroll-first workflow** - use the mouse wheel, PageUp/PageDown, Home, and End instead of step-by-step arrow navigation.
-- **Drag selection** - select plan rows with the mouse, extend with Shift-click, then annotate the touched parsed steps.
-- **Inline annotations** - comment, question, delete, or replace selected plan steps.
+- **Drag selection** - select exact rendered Markdown ranges with the mouse, extend with Shift-click, then annotate the touched source spans.
+- **Inline annotations** - comment, question, delete, or replace selected plan ranges.
 - **Markdown-aware rendering** - headings, paragraphs, lists, code fences, inline code, and spacing render from Markdown tokens.
 - **No-flicker custom engine** - React reconciler, Yoga layout, screen buffer diffing, and ANSI patch writes.
 - **Feedback loop** - Claude receives structured feedback, revises the plan, and Redline can intercept the revised plan again.
@@ -120,15 +120,15 @@ This exercises heading hierarchy, inline code, fenced code blocks, and multi-lin
 | Input | Action |
 |-------|--------|
 | Mouse wheel | Scroll the plan viewport |
-| Drag | Select rendered plan rows |
-| Shift-click | Extend the current row selection |
+| Drag | Select rendered Markdown ranges |
+| Shift-click | Extend the current range selection |
 | PageUp / PageDown | Scroll one viewport |
 | Home / End | Jump to top or bottom |
-| `c` | Add a comment to selected steps |
-| `?` | Add a question to selected steps |
-| `d` | Toggle delete on selected steps |
-| `r` | Suggest a replacement for selected steps |
-| `u` | Undo the latest annotation on selected steps |
+| `c` | Add a comment to selected ranges |
+| `?` | Add a question to selected ranges |
+| `d` | Toggle delete on selected ranges |
+| `r` | Suggest a replacement for selected ranges |
+| `u` | Undo the latest annotation on selected ranges |
 | `Esc` | Clear selection or cancel annotation input |
 | `Enter` | Approve if clean, or send feedback if annotated |
 | `q` / Ctrl-C | Quit without sending feedback |
