@@ -233,7 +233,7 @@ function sourceSpansForText(row: RenderedRow, text: string) {
     );
     const contentSegments = layout.rows.find((row) => row.role === "content")?.segments ?? [];
 
-    assert.ok(contentSegments.some((segment) => segment.text.includes("Keep") && segment.color === "gray"));
+    assert.ok(contentSegments.some((segment) => segment.text.includes("Keep") && segment.color === "lightGray"));
     assert.ok(contentSegments.some((segment) => segment.text.includes("code") && segment.color === "yellow"));
     assert.ok(!contentSegments.some((segment) => segment.text.includes("Keep") && segment.color === "red"));
   }
@@ -292,7 +292,8 @@ function sourceSpansForText(row: RenderedRow, text: string) {
   assert.ok(firstRow.segments.some((segment) =>
     segment.text.includes("Select") &&
     segment.backgroundColor !== "blue" &&
-    segment.color === "gray",
+    segment.color === "lightGray" &&
+    segment.dim === false
   ));
 }
 
