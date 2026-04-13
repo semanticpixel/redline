@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import type { Annotation, PlanStep } from "../types.js";
+import type { Annotation, AnnotationTarget, PlanStep, SourceRange } from "../types.js";
 import { AlternateScreen } from "./components/AlternateScreen.js";
 import Box from "./components/Box.js";
 import { Divider } from "./components/Divider.js";
@@ -10,8 +10,8 @@ import { useInput } from "./hooks/useInput.js";
 import { useMouse } from "./hooks/useMouse.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { computeMarkdownRows } from "./markdownRows.js";
-import { extendRowSelection, resolveSelectedStepIndices } from "./selection.js";
-import type { RowSelection } from "./selection.js";
+import { extendPointSelection, resolveSelectedSourceRanges } from "./selection.js";
+import type { PointSelection, SelectedSourceRange, SelectionPoint } from "./selection.js";
 import type { Segment } from "./renderTypes.js";
 
 type Props = {
@@ -45,6 +45,7 @@ const HEADER_HEIGHT = 3;
 const REVIEW_FOOTER_HEIGHT = 4;
 const ANNOTATION_FOOTER_HEIGHT = 4;
 const WHEEL_SCROLL_ROWS = 3;
+const SELECTION_DRAG_THRESHOLD = 2;
 
 export default function RedlineApp({
   initialSteps,
@@ -54,8 +55,10 @@ export default function RedlineApp({
   const size = useTerminalSize();
   const scrollRef = useRef<ScrollBoxHandle | null>(null);
   const isDraggingRef = useRef(false);
+  const dragAnchorRef = useRef<SelectionPoint | null>(null);
+  const hasDraggedRef = useRef(false);
   const [steps, setSteps] = useState(initialSteps);
-  const [rowSelection, setRowSelection] = useState<RowSelection | null>(null);
+  const [pointSelection, setPointSelection] = useState<PointSelection | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [isAnnotating, setIsAnnotating] = useState(false);
   const [annotationType, setAnnotationType] = useState<Annotation["type"]>("comment");
@@ -65,24 +68,37 @@ export default function RedlineApp({
   const bodyHeight = Math.max(1, size.rows - HEADER_HEIGHT - footerHeight);
   const contentWidth = Math.max(12, size.columns - 2);
   const baseRowLayout = computeMarkdownRows(steps, null, null, contentWidth);
-  const selectedIndices = resolveSelectedStepIndices(baseRowLayout, rowSelection);
+  const selectedRanges = resolveSelectedSourceRanges(baseRowLayout, pointSelection);
+  const selectedIndices = uniqueStepIndices(selectedRanges);
   const rowLayout = computeMarkdownRows(steps, null, null, contentWidth, {
-    selectedStepIndices: selectedIndices,
+    selectedSourceRanges: selectedRanges.map((selection) => selection.range),
   });
-  const selectedCount = selectedIndices.length;
+  const selectedCount = selectedRanges.length;
   const totalAnnotations = steps.reduce((sum, step) => sum + step.annotations.length, 0);
   const planTitle = steps[0]?.content.split("\n")[0]?.replace(/^#+\s*/, "") ?? "";
 
   useMouse((event) => {
-    if (!isInsideBody(event.y, bodyHeight)) {
-      if (event.type === "release") {
-        isDraggingRef.current = false;
+    if (event.type === "wheel") {
+      if (isInsideBody(event.y, bodyHeight)) {
+        scrollRef.current?.scrollBy(event.wheel === "up" ? -WHEEL_SCROLL_ROWS : WHEEL_SCROLL_ROWS);
       }
       return;
     }
 
-    if (event.type === "wheel") {
-      scrollRef.current?.scrollBy(event.wheel === "up" ? -WHEEL_SCROLL_ROWS : WHEEL_SCROLL_ROWS);
+    if (!isInsideBody(event.y, bodyHeight)) {
+      if (event.type === "press" && event.button === "left" && !event.shift) {
+        setPointSelection(null);
+        setStatusMessage("");
+      }
+      if (event.type === "release") {
+        if (!isDraggingRef.current && !event.shift) {
+          setPointSelection(null);
+          setStatusMessage("");
+        }
+        isDraggingRef.current = false;
+        dragAnchorRef.current = null;
+        hasDraggedRef.current = false;
+      }
       return;
     }
 
@@ -90,32 +106,49 @@ export default function RedlineApp({
       return;
     }
 
-    const row = rowFromMouse(event.y, scrollRef.current, bodyHeight, rowLayout.rows.length);
+    const point = pointFromMouse(event.x, event.y, scrollRef.current, bodyHeight, rowLayout.rows.length, contentWidth);
 
     if (event.type === "press") {
       if (event.shift) {
-        setRowSelection((current) => extendRowSelection(current, row));
+        setPointSelection((current) => extendPointSelection(current, point));
         isDraggingRef.current = false;
+        dragAnchorRef.current = null;
+        hasDraggedRef.current = false;
         setStatusMessage("");
         return;
       }
 
-      setRowSelection({ anchor: row, focus: row });
+      setPointSelection(null);
       isDraggingRef.current = true;
+      dragAnchorRef.current = point;
+      hasDraggedRef.current = false;
       setStatusMessage("");
       return;
     }
 
     if (event.type === "drag" && isDraggingRef.current) {
-      setRowSelection((current) => current ? { ...current, focus: row } : { anchor: row, focus: row });
+      const anchor = dragAnchorRef.current ?? point;
+      if (!hasDraggedRef.current && pointDistance(anchor, point) < SELECTION_DRAG_THRESHOLD) {
+        return;
+      }
+      hasDraggedRef.current = true;
+      setPointSelection({ anchor, focus: point });
       return;
     }
 
     if (event.type === "release") {
-      if (isDraggingRef.current) {
-        setRowSelection((current) => current ? { ...current, focus: row } : current);
+      if (isDraggingRef.current && hasDraggedRef.current) {
+        const anchor = dragAnchorRef.current ?? point;
+        setPointSelection({ anchor, focus: point });
+      } else if (isDraggingRef.current) {
+        setPointSelection(null);
+      } else if (!event.shift) {
+        setPointSelection(null);
+        setStatusMessage("");
       }
       isDraggingRef.current = false;
+      dragAnchorRef.current = null;
+      hasDraggedRef.current = false;
     }
   });
 
@@ -129,7 +162,7 @@ export default function RedlineApp({
       if (key.escape) {
         setInputValue("");
         setIsAnnotating(false);
-        setRowSelection(null);
+        setPointSelection(null);
         setStatusMessage("");
         return;
       }
@@ -138,7 +171,8 @@ export default function RedlineApp({
         commitAnnotation({
           annotationType,
           inputValue,
-          selectedIndices,
+          selectedRanges,
+          steps,
           setInputValue,
           setIsAnnotating,
           setStatusMessage,
@@ -193,7 +227,7 @@ export default function RedlineApp({
     }
 
     if (key.escape) {
-      setRowSelection(null);
+      setPointSelection(null);
       setStatusMessage("");
       return;
     }
@@ -218,8 +252,8 @@ export default function RedlineApp({
         setStatusMessage("select text first");
         return;
       }
-      setSteps((current) => toggleDelete(current, selectedIndices));
-      setStatusMessage(`${selectedCount} step${selectedCount === 1 ? "" : "s"} marked for delete`);
+      setSteps((current) => toggleDelete(current, selectedRanges));
+      setStatusMessage(`${selectedCount} range${selectedCount === 1 ? "" : "s"} marked for delete`);
       return;
     }
 
@@ -229,7 +263,7 @@ export default function RedlineApp({
         return;
       }
       setSteps((current) => undoLastAnnotation(current, selectedIndices));
-      setStatusMessage(`undid latest annotation on ${selectedCount} step${selectedCount === 1 ? "" : "s"}`);
+      setStatusMessage(`undid latest annotation on ${selectedCount} range${selectedCount === 1 ? "" : "s"}`);
       return;
     }
 
@@ -269,7 +303,7 @@ export default function RedlineApp({
               segments={[
                 { text: `${TYPE_ICONS[annotationType]} `, color: TYPE_COLORS[annotationType], bold: true },
                 {
-                  text: `${TYPE_LABELS[annotationType]} (${selectedCount} step${selectedCount === 1 ? "" : "s"})`,
+                  text: `${TYPE_LABELS[annotationType]} (${selectedCount} range${selectedCount === 1 ? "" : "s"})`,
                   color: TYPE_COLORS[annotationType],
                   bold: true,
                 },
@@ -367,7 +401,8 @@ function beginAnnotation(
 function commitAnnotation({
   annotationType,
   inputValue,
-  selectedIndices,
+  selectedRanges,
+  steps,
   setInputValue,
   setIsAnnotating,
   setStatusMessage,
@@ -375,7 +410,8 @@ function commitAnnotation({
 }: {
   annotationType: Annotation["type"];
   inputValue: string;
-  selectedIndices: number[];
+  selectedRanges: SelectedSourceRange[];
+  steps: PlanStep[];
   setInputValue: React.Dispatch<React.SetStateAction<string>>;
   setIsAnnotating: React.Dispatch<React.SetStateAction<boolean>>;
   setStatusMessage: React.Dispatch<React.SetStateAction<string>>;
@@ -388,40 +424,46 @@ function commitAnnotation({
     return;
   }
 
-  const annotation: Annotation = {
-    id: makeId(selectedIndices[0] ?? 0, annotationType),
-    type: annotationType,
-    text: text || "Remove this step",
-    replacement: annotationType === "replace" ? text : undefined,
-  };
-
   setSteps((current) =>
     current.map((step, index) => {
-      if (!selectedIndices.includes(index)) {
+      const selectedRange = selectedRanges.find((range) => range.stepIndex === index);
+      if (!selectedRange) {
         return step;
       }
+      const annotation: Annotation = {
+        id: makeId(index, annotationType),
+        type: annotationType,
+        text: text || "Remove selected range",
+        target: buildAnnotationTarget(steps[index] ?? step, selectedRange),
+        replacement: annotationType === "replace" ? text : undefined,
+      };
       return {
         ...step,
-        annotations: [...step.annotations, { ...annotation }],
+        annotations: [...step.annotations, annotation],
       };
     }),
   );
   setInputValue("");
   setIsAnnotating(false);
-  setStatusMessage(`${selectedIndices.length} step${selectedIndices.length === 1 ? "" : "s"} annotated`);
+  setStatusMessage(`${selectedRanges.length} range${selectedRanges.length === 1 ? "" : "s"} annotated`);
 }
 
-function toggleDelete(steps: PlanStep[], selectedIndices: number[]): PlanStep[] {
+function toggleDelete(steps: PlanStep[], selectedRanges: SelectedSourceRange[]): PlanStep[] {
   return steps.map((step, index) => {
-    if (!selectedIndices.includes(index)) {
+    const selectedRange = selectedRanges.find((range) => range.stepIndex === index);
+    if (!selectedRange) {
       return step;
     }
 
-    const hasDelete = step.annotations.some((annotation) => annotation.type === "delete");
+    const hasDelete = step.annotations.some((annotation) =>
+      annotation.type === "delete" && sameTargetRange(annotation.target?.range, selectedRange.range),
+    );
     if (hasDelete) {
       return {
         ...step,
-        annotations: step.annotations.filter((annotation) => annotation.type !== "delete"),
+        annotations: step.annotations.filter((annotation) =>
+          annotation.type !== "delete" || !sameTargetRange(annotation.target?.range, selectedRange.range),
+        ),
       };
     }
 
@@ -432,7 +474,8 @@ function toggleDelete(steps: PlanStep[], selectedIndices: number[]): PlanStep[] 
         {
           id: makeId(index, "delete"),
           type: "delete",
-          text: "Remove this step",
+          text: "Remove selected range",
+          target: buildAnnotationTarget(step, selectedRange),
         },
       ],
     };
@@ -466,7 +509,7 @@ function buildStatusSegments({
     segments.push({ text: statusMessage, color: "yellow", bold: true });
   } else if (selectedCount > 0) {
     segments.push({
-      text: `${selectedCount} step${selectedCount === 1 ? "" : "s"} selected`,
+      text: `${selectedCount} range${selectedCount === 1 ? "" : "s"} selected`,
       color: "blue",
       bold: true,
     });
@@ -490,15 +533,73 @@ function isInsideBody(y: number, bodyHeight: number): boolean {
   return y >= HEADER_HEIGHT && y < HEADER_HEIGHT + bodyHeight;
 }
 
-function rowFromMouse(
+function pointFromMouse(
+  terminalX: number,
   terminalY: number,
   scrollBox: ScrollBoxHandle | null,
   bodyHeight: number,
   rowCount: number,
-): number {
+  contentWidth: number,
+): SelectionPoint {
   const localY = Math.max(0, Math.min(bodyHeight - 1, terminalY - HEADER_HEIGHT));
   const scrollTop = scrollBox?.getScrollTop() ?? 0;
-  return Math.max(0, Math.min(Math.max(0, rowCount - 1), Math.floor(scrollTop) + localY));
+  return {
+    row: Math.max(0, Math.min(Math.max(0, rowCount - 1), Math.floor(scrollTop) + localY)),
+    column: Math.max(0, Math.min(Math.max(0, contentWidth - 1), terminalX)),
+  };
+}
+
+function pointDistance(left: SelectionPoint, right: SelectionPoint): number {
+  return Math.abs(left.row - right.row) + Math.abs(left.column - right.column);
+}
+
+function uniqueStepIndices(selectedRanges: SelectedSourceRange[]): number[] {
+  return [...new Set(selectedRanges.map((range) => range.stepIndex))].sort((left, right) => left - right);
+}
+
+function buildAnnotationTarget(step: PlanStep, selectedRange: SelectedSourceRange): AnnotationTarget {
+  const start = Math.max(step.sourceStart, Math.min(selectedRange.range.start, step.sourceEnd));
+  const end = Math.max(start, Math.min(selectedRange.range.end, step.sourceEnd));
+  const excerpt = step.content.slice(start - step.sourceStart, end - step.sourceStart);
+  const startPosition = sourcePositionForStepOffset(step, start);
+  const endPosition = sourcePositionForStepOffset(step, end);
+
+  return {
+    range: { start, end },
+    lineStart: startPosition.line,
+    columnStart: startPosition.column,
+    lineEnd: endPosition.line,
+    columnEnd: endPosition.column,
+    excerpt,
+    wholeStep: selectedRange.wholeStep,
+  };
+}
+
+function sourcePositionForStepOffset(
+  step: PlanStep,
+  absoluteOffset: number,
+): { line: number; column: number } {
+  const localOffset = Math.max(0, Math.min(step.content.length, absoluteOffset - step.sourceStart));
+  let line = 1;
+  let column = 1;
+
+  for (let index = 0; index < localOffset; index++) {
+    if (step.content[index] === "\n") {
+      line += 1;
+      column = 1;
+      continue;
+    }
+    column += 1;
+  }
+
+  return {
+    line: step.sourceStartLine + line - 1,
+    column: line === 1 ? step.sourceStartColumn + column - 1 : column,
+  };
+}
+
+function sameTargetRange(left: SourceRange | undefined, right: SourceRange): boolean {
+  return Boolean(left && left.start === right.start && left.end === right.end);
 }
 
 function truncate(text: string, width: number): string {

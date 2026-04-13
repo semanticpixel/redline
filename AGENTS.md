@@ -20,7 +20,7 @@ The system has three layers:
 
 1. **Hook layer** (`redline-hook.sh`) bridges Codex's no-TTY hook environment to a real terminal tab and uses `REDLINE_OUTPUT_FILE` for response passing.
 2. **Core** (`src/bin/index.ts`, `src/utils/`) reads hook JSON, parses plan Markdown into steps, reattaches TTY for direct-pipe testing, and writes hook responses.
-3. **Engine** (`src/engine/`) renders the fullscreen UI, handles input/mouse events, scrolls the plan viewport, maps row selections to parsed steps, and records annotations.
+3. **Engine** (`src/engine/`) renders the fullscreen UI, handles input/mouse events, scrolls the plan viewport, maps point selections to Markdown source ranges, and records annotations.
 
 See `ARCHITECTURE.md` for the full data flow and design decisions.
 
@@ -30,7 +30,7 @@ See `ARCHITECTURE.md` for the full data flow and design decisions.
 - `src/engine/app.tsx` - review UI state, scrolling, selection, annotations, and footer.
 - `src/engine/runtime.tsx` - runtime lifecycle, raw input, mouse events, resize handling, frame scheduling, and cleanup.
 - `src/engine/markdownRows.ts` - Markdown tokens to styled rendered rows.
-- `src/engine/selection.ts` - row selection to parsed step indices.
+- `src/engine/selection.ts` - point selection to Markdown source ranges.
 - `src/engine/mouse.ts` - SGR mouse packet decoding.
 - `src/engine/reconciler.ts` - React host config.
 - `src/engine/renderer.ts` - host tree to screen buffer paint.
@@ -68,8 +68,8 @@ jq -n '{session_id:"test",tool_name:"ExitPlanMode",tool_input:{plan:"# Plan\n## 
 ## Important Patterns
 
 - **Scroll-first interaction** - mouse wheel and PageUp/PageDown/Home/End move the `ScrollBox`; arrow keys are not the primary navigation model.
-- **App-managed selection** - drag and Shift-click create row selections that are resolved back to whole parsed steps. Native terminal selection is not used for annotations.
-- **Whole-step annotations** - exact Markdown source spans are deferred until tokenization, wrapping, and cell hit testing preserve source offsets.
+- **App-managed selection** - drag and Shift-click create point selections that are resolved back to Markdown source ranges. Native terminal selection is not used for annotations.
+- **Source-span annotations** - Markdown source offsets survive parsing, token rendering, wrapping, and cell hit testing so feedback can include selected excerpts.
 - **Terminal cleanup** - alt-screen, cursor visibility, raw mode, and SGR mouse reporting must be restored on normal and abnormal exits.
 - **File-based output** - hook mode writes the Codex response to `REDLINE_OUTPUT_FILE` because stdout is owned by the fullscreen renderer.
 - **Delete is a toggle** - pressing `d` on selected steps with delete annotations removes the delete annotation instead of stacking duplicates.
@@ -84,6 +84,5 @@ jq -n '{session_id:"test",tool_name:"ExitPlanMode",tool_input:{plan:"# Plan\n## 
 ## Known Limitations
 
 - Plan parser splits on headings and list items; deeply nested content groups with the parent step.
-- Selection maps to whole parsed steps, not exact Markdown character ranges.
 - Multi-line annotation input is not yet supported.
 - Terminal mouse behavior varies by emulator, so cleanup and fallback behavior matter.

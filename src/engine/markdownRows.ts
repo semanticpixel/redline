@@ -1,6 +1,6 @@
 import { lexer, type Token, type Tokens } from "marked";
-import type { Annotation, PlanStep } from "../types.js";
-import type { RenderedRow, RowLayout, Segment } from "./renderTypes.js";
+import type { Annotation, PlanStep, SourceRange } from "../types.js";
+import type { RenderedRow, RowLayout, Segment, SourceSpan } from "./renderTypes.js";
 
 type LogicalRow = {
   segments: Segment[];
@@ -17,9 +17,10 @@ type StepRenderState = {
   backgroundColor?: Segment["backgroundColor"];
   hasDelete: boolean;
   annotationColor?: Segment["color"];
+  selectedSourceRanges: SourceRange[];
 };
 
-type InlineStyle = Omit<Segment, "text">;
+type InlineStyle = Omit<Segment, "text" | "sourceMap">;
 type AnnotationBadge = {
   text: string;
   color: Segment["color"];
@@ -27,6 +28,7 @@ type AnnotationBadge = {
 
 type ComputeMarkdownRowsOptions = {
   selectedStepIndices?: Iterable<number>;
+  selectedSourceRanges?: Iterable<SourceRange>;
 };
 
 const TYPE_COLORS: Record<Annotation["type"], "yellow" | "cyan" | "red" | "green"> = {
@@ -58,6 +60,8 @@ export function computeMarkdownRows(
   const totalSteps = steps.length;
   const gutterWidth = String(totalSteps).length;
   const selectedStepIndices = new Set(options.selectedStepIndices ?? []);
+  const selectedSourceRanges = [...options.selectedSourceRanges ?? []];
+  const hasSourceSelection = selectedSourceRanges.length > 0;
 
   for (let index = 0; index < totalSteps; index++) {
     const step = steps[index]!;
@@ -70,9 +74,10 @@ export function computeMarkdownRows(
       active,
       selected,
       highlighted: active || selected,
-      backgroundColor: selected && !active ? "gray" : undefined,
+      backgroundColor: selected && !active && !hasSourceSelection ? "gray" : undefined,
       hasDelete: annotationType === "delete",
       annotationColor: annotationType ? TYPE_COLORS[annotationType] : undefined,
+      selectedSourceRanges,
     };
     const prefixLength = 2 + gutterWidth + 1 + 2;
     const prefixPadding = " ".repeat(prefixLength);
@@ -181,7 +186,7 @@ function addLogicalRows({
 
       rows.push({
         key: `step-${step.id}-md-${logicalRowIndex}-${wrappedIndex}`,
-        segments,
+        segments: applySourceSelectionToSegments(segments, state.selectedSourceRanges),
         stepIndex,
         role: "content",
       });
@@ -273,15 +278,25 @@ function startsWithHeading(step: PlanStep): boolean {
 
 function renderStepMarkdown(step: PlanStep, state: StepRenderState): LogicalRow[] {
   const tokens = lexer(step.content, { gfm: true, breaks: false });
-  return trimBlankEdges(coalesceBlankRows(renderBlocks(tokens, state)));
+  return trimBlankEdges(coalesceBlankRows(renderBlocks(tokens, state, 0, step.sourceStart, step.content)));
 }
 
-function renderBlocks(tokens: Token[], state: StepRenderState, listDepth = 0): LogicalRow[] {
+function renderBlocks(
+  tokens: Token[],
+  state: StepRenderState,
+  listDepth = 0,
+  sourceStart = 0,
+  sourceText = "",
+): LogicalRow[] {
   const rows: LogicalRow[] = [];
   const meaningfulTokens = tokens.filter((token) => token.type !== "def");
+  let cursor = 0;
 
   meaningfulTokens.forEach((token, index) => {
-    const rendered = renderBlock(token, state, listDepth);
+    const tokenPosition = locateRaw(token.raw ?? "", sourceText, cursor);
+    const tokenSourceStart = sourceStart + tokenPosition.start;
+    cursor = tokenPosition.end;
+    const rendered = renderBlock(token, state, listDepth, tokenSourceStart);
     appendRows(rows, rendered);
 
     const currentIsSpace = token.type === "space";
@@ -294,7 +309,12 @@ function renderBlocks(tokens: Token[], state: StepRenderState, listDepth = 0): L
   return rows;
 }
 
-function renderBlock(token: Token, state: StepRenderState, listDepth: number): LogicalRow[] {
+function renderBlock(
+  token: Token,
+  state: StepRenderState,
+  listDepth: number,
+  sourceStart: number,
+): LogicalRow[] {
   switch (token.type) {
     case "space":
       return [blankRow()];
@@ -302,7 +322,7 @@ function renderBlock(token: Token, state: StepRenderState, listDepth: number): L
       const heading = token as Tokens.Heading;
       return [
         {
-          segments: renderInline(heading.tokens, headingStyle(state), heading.text),
+          segments: renderInline(heading.tokens, headingStyle(state), heading.text, sourceStart, heading.raw),
         },
       ];
     }
@@ -310,7 +330,7 @@ function renderBlock(token: Token, state: StepRenderState, listDepth: number): L
       const paragraph = token as Tokens.Paragraph;
       return [
         {
-          segments: renderInline(paragraph.tokens, bodyStyle(state), paragraph.text),
+          segments: renderInline(paragraph.tokens, bodyStyle(state), paragraph.text, sourceStart, paragraph.raw),
         },
       ];
     }
@@ -319,36 +339,45 @@ function renderBlock(token: Token, state: StepRenderState, listDepth: number): L
       return [
         {
           segments: text.tokens
-            ? renderInline(text.tokens, bodyStyle(state), text.text)
-            : [{ text: normalizeInlineText(text.text), ...bodyStyle(state) }],
+            ? renderInline(text.tokens, bodyStyle(state), text.text, sourceStart, text.raw)
+            : [sourceSegment(normalizeInlineText(text.text), text.raw, sourceStart, bodyStyle(state), true)],
         },
       ];
     }
     case "list":
-      return renderList(token as Tokens.List, state, listDepth);
+      return renderList(token as Tokens.List, state, listDepth, sourceStart);
     case "code":
-      return renderCode(token as Tokens.Code, state);
+      return renderCode(token as Tokens.Code, state, sourceStart);
     case "blockquote":
-      return renderBlockquote(token as Tokens.Blockquote, state, listDepth);
+      return renderBlockquote(token as Tokens.Blockquote, state, listDepth, sourceStart);
     case "hr":
       return [{ segments: [{ text: "─".repeat(12), ...bodyStyle(state) }] }];
     case "html":
-      return [plainTextRow((token as Tokens.HTML).text || token.raw, codeStyle(state))];
+      return [plainTextRow((token as Tokens.HTML).text || token.raw, codeStyle(state), sourceStart, token.raw)];
     case "table":
-      return renderTable(token as Tokens.Table, state);
+      return renderTable(token as Tokens.Table, state, sourceStart);
     default:
-      return [plainTextRow(textFromUnknownToken(token), bodyStyle(state))];
+      return [plainTextRow(textFromUnknownToken(token), bodyStyle(state), sourceStart, token.raw ?? textFromUnknownToken(token))];
   }
 }
 
-function renderList(token: Tokens.List, state: StepRenderState, listDepth: number): LogicalRow[] {
+function renderList(
+  token: Tokens.List,
+  state: StepRenderState,
+  listDepth: number,
+  sourceStart: number,
+): LogicalRow[] {
   const rows: LogicalRow[] = [];
   const start = typeof token.start === "number" ? token.start : 1;
+  let itemCursor = 0;
 
   token.items.forEach((item, itemIndex) => {
+    const itemPosition = locateRaw(item.raw, token.raw, itemCursor);
+    const itemSourceStart = sourceStart + itemPosition.start;
+    itemCursor = itemPosition.end;
     const marker = token.ordered ? `${start + itemIndex}. ` : "- ";
     const prefix = `${"  ".repeat(listDepth)}${marker}`;
-    const childRows = trimBlankEdges(renderListItem(item, state, listDepth));
+    const childRows = trimBlankEdges(renderListItem(item, state, listDepth, itemSourceStart));
     let firstContentRow = true;
 
     for (const row of childRows) {
@@ -383,20 +412,25 @@ function renderListItem(
   item: Tokens.ListItem,
   state: StepRenderState,
   listDepth: number,
+  sourceStart: number,
 ): LogicalRow[] {
   const rows: LogicalRow[] = [];
 
   if (item.tokens.length === 0) {
-    return [plainTextRow(item.text, bodyStyle(state))];
+    return [plainTextRow(item.text, bodyStyle(state), sourceStart, item.raw)];
   }
 
+  let cursor = 0;
   item.tokens.forEach((token, index) => {
+    const tokenPosition = locateRaw(token.raw ?? "", item.raw, cursor);
+    const tokenSourceStart = sourceStart + tokenPosition.start;
+    cursor = tokenPosition.end;
     if (token.type === "list") {
-      appendRows(rows, renderList(token as Tokens.List, state, listDepth + 1));
+      appendRows(rows, renderList(token as Tokens.List, state, listDepth + 1, tokenSourceStart));
       return;
     }
 
-    appendRows(rows, renderBlock(token, state, listDepth + 1));
+    appendRows(rows, renderBlock(token, state, listDepth + 1, tokenSourceStart));
     const next = item.tokens[index + 1];
     if (item.loose && next && token.type !== "space" && next.type !== "space") {
       pushBlank(rows);
@@ -406,21 +440,30 @@ function renderListItem(
   return rows;
 }
 
-function renderCode(token: Tokens.Code, state: StepRenderState): LogicalRow[] {
+function renderCode(token: Tokens.Code, state: StepRenderState, sourceStart: number): LogicalRow[] {
   const lines = token.text.split("\n");
   const rows = lines.length > 0 ? lines : [""];
-  return rows.map((line) => ({
-    segments: highlightCodeLine(line.length > 0 ? line : " ", token.lang, state),
-    preserveWhitespace: true,
-  }));
+  const bodyOffset = token.raw.indexOf(token.text);
+  let lineSourceStart = sourceStart + Math.max(0, bodyOffset);
+
+  return rows.map((line) => {
+    const displayLine = line.length > 0 ? line : " ";
+    const row = {
+      segments: highlightCodeLine(displayLine, token.lang, state, line.length > 0 ? lineSourceStart : null),
+      preserveWhitespace: true,
+    };
+    lineSourceStart += line.length + 1;
+    return row;
+  });
 }
 
 function renderBlockquote(
   token: Tokens.Blockquote,
   state: StepRenderState,
   listDepth: number,
+  sourceStart: number,
 ): LogicalRow[] {
-  return renderBlocks(token.tokens, state, listDepth).map((row) => {
+  return renderBlocks(token.tokens, state, listDepth, sourceStart, token.raw).map((row) => {
     if (row.blank) {
       return row;
     }
@@ -432,83 +475,124 @@ function renderBlockquote(
   });
 }
 
-function renderTable(token: Tokens.Table, state: StepRenderState): LogicalRow[] {
+function renderTable(token: Tokens.Table, state: StepRenderState, sourceStart: number): LogicalRow[] {
   const rows: LogicalRow[] = [];
+  const rawLines = token.raw.split("\n");
   rows.push({
-    segments: tableCellsToSegments(token.header, state),
+    segments: tableCellsToSegments(token.header, state, sourceStart, rawLines[0] ?? ""),
   });
-  for (const row of token.rows) {
+  for (const [index, row] of token.rows.entries()) {
+    const rawLineIndex = index + 2;
+    const rawLineStart = sourceStart + rawLines.slice(0, rawLineIndex).join("\n").length + (rawLineIndex > 0 ? 1 : 0);
     rows.push({
-      segments: tableCellsToSegments(row, state),
+      segments: tableCellsToSegments(row, state, rawLineStart, rawLines[rawLineIndex] ?? ""),
     });
   }
   return rows;
 }
 
-function tableCellsToSegments(cells: Tokens.TableCell[], state: StepRenderState): Segment[] {
+function tableCellsToSegments(
+  cells: Tokens.TableCell[],
+  state: StepRenderState,
+  rowSourceStart: number,
+  rowText: string,
+): Segment[] {
   const segments: Segment[] = [];
+  const cellRanges = locateTableCells(cells, rowText);
   cells.forEach((cell, index) => {
     if (index > 0) {
       segments.push({ text: " | ", ...bodyStyle(state) });
     }
-    segments.push(...renderInline(cell.tokens, bodyStyle(state), cell.text));
+    const range = cellRanges[index] ?? { start: 0, end: rowText.length };
+    segments.push(...renderInline(
+      cell.tokens,
+      bodyStyle(state),
+      cell.text,
+      rowSourceStart + range.start,
+      rowText.slice(range.start, range.end),
+    ));
   });
   return segments.length > 0 ? segments : [{ text: " ", ...bodyStyle(state) }];
 }
 
-function renderInline(tokens: Token[], style: InlineStyle, fallback = ""): Segment[] {
+function renderInline(
+  tokens: Token[],
+  style: InlineStyle,
+  fallback = "",
+  sourceStart = 0,
+  sourceText = fallback,
+): Segment[] {
   if (tokens.length === 0) {
-    return [{ text: normalizeInlineText(fallback), ...style }];
+    return [sourceSegment(normalizeInlineText(fallback), sourceText, sourceStart, style, true)];
   }
 
   const segments: Segment[] = [];
+  let cursor = 0;
   for (const token of tokens) {
+    const raw = token.raw ?? textFromUnknownToken(token);
+    const tokenPosition = locateRaw(raw, sourceText, cursor);
+    const tokenSourceStart = sourceStart + tokenPosition.start;
+    cursor = tokenPosition.end;
     switch (token.type) {
       case "text":
       case "escape":
         segments.push({
-          text: normalizeInlineText((token as Tokens.Text | Tokens.Escape).text),
+          ...sourceSegment(
+            normalizeInlineText((token as Tokens.Text | Tokens.Escape).text),
+            raw,
+            tokenSourceStart,
+            style,
+            true,
+          ),
           ...style,
         });
         break;
       case "strong": {
         const strong = token as Tokens.Strong;
-        segments.push(...renderInline(strong.tokens, { ...style, bold: true }, strong.text));
+        segments.push(...renderInline(strong.tokens, { ...style, bold: true }, strong.text, tokenSourceStart, strong.raw));
         break;
       }
       case "em": {
         const em = token as Tokens.Em;
-        segments.push(...renderInline(em.tokens, style, em.text));
+        segments.push(...renderInline(em.tokens, style, em.text, tokenSourceStart, em.raw));
         break;
       }
-      case "codespan":
-        segments.push({
-          text: (token as Tokens.Codespan).text,
-          ...style,
-          color: style.color === "red" ? style.color : "yellow",
-        });
+      case "codespan": {
+        const codespan = token as Tokens.Codespan;
+        const textOffset = raw.indexOf(codespan.text);
+        segments.push(sourceSegment(
+          codespan.text,
+          codespan.text,
+          tokenSourceStart + Math.max(0, textOffset),
+          {
+            ...style,
+            color: style.color === "red" ? style.color : "yellow",
+          },
+          false,
+        ));
         break;
+      }
       case "link": {
         const link = token as Tokens.Link;
-        segments.push(...renderInline(link.tokens, style, link.text));
+        segments.push(...renderInline(link.tokens, style, link.text, tokenSourceStart, link.raw));
         break;
       }
       case "image":
-        segments.push({ text: (token as Tokens.Image).text, ...style });
+        segments.push(sourceSegment((token as Tokens.Image).text, raw, tokenSourceStart, style, true));
         break;
       case "del": {
         const del = token as Tokens.Del;
-        segments.push(...renderInline(del.tokens, style, del.text));
+        segments.push(...renderInline(del.tokens, style, del.text, tokenSourceStart, del.raw));
         break;
       }
       case "br":
         segments.push({ text: " ", ...style });
         break;
       case "html":
-        segments.push({ text: normalizeInlineText((token as Tokens.HTML).text), ...style });
+        segments.push(sourceSegment(normalizeInlineText((token as Tokens.HTML).text), raw, tokenSourceStart, style, true));
         break;
       default:
-        segments.push({ text: normalizeInlineText(textFromUnknownToken(token)), ...style });
+        segments.push(sourceSegment(normalizeInlineText(textFromUnknownToken(token)), raw, tokenSourceStart, style, true));
         break;
     }
   }
@@ -588,10 +672,11 @@ function highlightCodeLine(
   line: string,
   language: string | undefined,
   state: StepRenderState,
+  sourceStart: number | null,
 ): Segment[] {
   const base = codeStyle(state);
   if (state.hasDelete) {
-    return [{ text: line, ...base }];
+    return [sourceStart === null ? { text: line, ...base } : sourceSegment(line, line, sourceStart, base, false)];
   }
 
   const segments: Segment[] = [];
@@ -602,10 +687,10 @@ function highlightCodeLine(
     const token = match[0];
     const index = match.index ?? 0;
     const style = codeTokenStyle(token, line, index, language, base);
-    segments.push({ text: token, ...style });
+    segments.push(sourceStart === null ? { text: token, ...style } : sourceSegment(token, token, sourceStart + index, style, false));
   }
 
-  return segments.length > 0 ? segments : [{ text: line, ...base }];
+  return segments.length > 0 ? segments : [sourceStart === null ? { text: line, ...base } : sourceSegment(line, line, sourceStart, base, false)];
 }
 
 function codeTokenStyle(
@@ -725,7 +810,9 @@ function wrapSegments(
   };
 
   for (const segment of segments) {
-    for (const chunk of segment.text.match(/\n|[^\S\n]+|\S+/g) ?? []) {
+    for (const match of segment.text.matchAll(/\n|[^\S\n]+|\S+/g)) {
+      const chunk = match[0];
+      const chunkIndex = match.index ?? 0;
       if (chunk === "\n") {
         startContinuationRow();
         continue;
@@ -740,7 +827,7 @@ function wrapSegments(
           startContinuationRow();
           continue;
         }
-        appendText(currentRow, collapsed, segment);
+        appendChar(currentRow, collapsed, segment, spanForRange(segment, chunkIndex, chunkIndex + chunk.length));
         currentWidth += collapsed.length;
         continue;
       }
@@ -758,7 +845,8 @@ function wrapSegments(
         }
 
         const next = remaining.slice(0, available);
-        appendText(currentRow, next, segment);
+        const nextStart = chunkIndex + (chunk.length - remaining.length);
+        appendText(currentRow, next, segment, nextStart);
         currentWidth += next.length;
         remaining = remaining.slice(next.length);
 
@@ -792,7 +880,8 @@ function wrapSegmentsPreservingWhitespace(
   };
 
   for (const segment of segments) {
-    for (const char of segment.text) {
+    for (let index = 0; index < segment.text.length; index++) {
+      const char = segment.text[index] ?? "";
       if (char === "\n") {
         startContinuationRow();
         continue;
@@ -802,7 +891,7 @@ function wrapSegmentsPreservingWhitespace(
         startContinuationRow();
       }
 
-      appendChar(currentRow, char, segment);
+      appendChar(currentRow, char, segment, spanAt(segment, index));
       currentWidth += 1;
     }
   }
@@ -812,9 +901,9 @@ function wrapSegmentsPreservingWhitespace(
   }));
 }
 
-function appendText(row: Segment[], text: string, source: Segment): void {
-  for (const char of text) {
-    appendChar(row, char, source);
+function appendText(row: Segment[], text: string, source: Segment, sourceTextStart: number): void {
+  for (let index = 0; index < text.length; index++) {
+    appendChar(row, text[index] ?? "", source, spanAt(source, sourceTextStart + index));
   }
 }
 
@@ -822,8 +911,8 @@ function currentIndentWidth(row: Segment[]): number {
   return row.length === 1 && row[0]?.text.trim().length === 0 ? row[0].text.length : 0;
 }
 
-function appendChar(row: Segment[], char: string, source: Segment): void {
-  const style: Omit<Segment, "text"> = {
+function appendChar(row: Segment[], char: string, source: Segment, span: SourceSpan | null = null): void {
+  const style: Omit<Segment, "text" | "sourceMap"> = {
     color: source.color,
     backgroundColor: source.backgroundColor,
     bold: source.bold,
@@ -832,12 +921,16 @@ function appendChar(row: Segment[], char: string, source: Segment): void {
   const previous = row[row.length - 1];
   if (previous && sameStyle(previous, style)) {
     previous.text += char;
+    if (previous.sourceMap || span) {
+      previous.sourceMap = previous.sourceMap ?? new Array(previous.text.length - 1).fill(null);
+      previous.sourceMap.push(span);
+    }
     return;
   }
-  row.push({ text: char, ...style });
+  row.push({ text: char, sourceMap: span ? [span] : undefined, ...style });
 }
 
-function sameStyle(left: Segment, right: Omit<Segment, "text">): boolean {
+function sameStyle(left: Segment, right: Omit<Segment, "text" | "sourceMap">): boolean {
   return (
     left.color === right.color &&
     left.backgroundColor === right.backgroundColor &&
@@ -846,9 +939,141 @@ function sameStyle(left: Segment, right: Omit<Segment, "text">): boolean {
   );
 }
 
-function plainTextRow(text: string, style: InlineStyle): LogicalRow {
+function sourceSegment(
+  text: string,
+  sourceText: string,
+  sourceStart: number,
+  style: InlineStyle,
+  normalizeWhitespace: boolean,
+): Segment {
+  const sourceMap = normalizeWhitespace
+    ? sourceMapForNormalizedText(sourceText, sourceStart)
+    : sourceMapForText(text, sourceStart);
   return {
-    segments: [{ text, ...style }],
+    text,
+    sourceMap: sourceMap.length === text.length ? sourceMap : undefined,
+    ...style,
+  };
+}
+
+function sourceMapForText(text: string, sourceStart: number): SourceSpan[] {
+  return Array.from({ length: text.length }, (_, index) => ({
+    start: sourceStart + index,
+    end: sourceStart + index + 1,
+  }));
+}
+
+function sourceMapForNormalizedText(sourceText: string, sourceStart: number): SourceSpan[] {
+  const sourceMap: SourceSpan[] = [];
+  for (const match of sourceText.matchAll(/\s+|\S/g)) {
+    const text = match[0];
+    const start = sourceStart + (match.index ?? 0);
+    if (/^\s+$/.test(text)) {
+      sourceMap.push({
+        start,
+        end: start + text.length,
+      });
+      continue;
+    }
+    sourceMap.push({
+      start,
+      end: start + text.length,
+    });
+  }
+  return sourceMap;
+}
+
+function spanAt(segment: Segment, index: number): SourceSpan | null {
+  return segment.sourceMap?.[index] ?? null;
+}
+
+function spanForRange(segment: Segment, start: number, end: number): SourceSpan | null {
+  const spans = segment.sourceMap?.slice(start, end).filter((span): span is SourceSpan => Boolean(span)) ?? [];
+  if (spans.length === 0) {
+    return null;
+  }
+  return {
+    start: Math.min(...spans.map((span) => span.start)),
+    end: Math.max(...spans.map((span) => span.end)),
+  };
+}
+
+function locateRaw(raw: string, sourceText: string, cursor: number): { start: number; end: number } {
+  if (!raw) {
+    return { start: cursor, end: cursor };
+  }
+
+  const found = sourceText.indexOf(raw, Math.max(0, cursor));
+  if (found >= 0) {
+    return {
+      start: found,
+      end: found + raw.length,
+    };
+  }
+
+  return {
+    start: cursor,
+    end: Math.min(sourceText.length, cursor + raw.length),
+  };
+}
+
+function locateTableCells(
+  cells: Tokens.TableCell[],
+  rowText: string,
+): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  let cursor = 0;
+
+  for (const cell of cells) {
+    const text = cell.text.trim();
+    const found = text ? rowText.indexOf(text, cursor) : -1;
+    const start = found >= 0 ? found : cursor;
+    const end = found >= 0 ? found + text.length : start;
+    ranges.push({ start, end });
+    cursor = end;
+  }
+
+  return ranges;
+}
+
+function applySourceSelectionToSegments(
+  segments: Segment[],
+  selectedRanges: SourceRange[],
+): Segment[] {
+  if (selectedRanges.length === 0) {
+    return segments;
+  }
+
+  const highlighted: Segment[] = [];
+  for (const segment of segments) {
+    for (let index = 0; index < segment.text.length; index++) {
+      const span = spanAt(segment, index);
+      const selected = span ? selectedRanges.some((range) => rangesOverlap(range, span)) : false;
+      appendChar(highlighted, segment.text[index] ?? "", {
+        ...segment,
+        text: "",
+        backgroundColor: selected ? "blue" : segment.backgroundColor,
+        color: selected ? "white" : segment.color,
+        dim: selected ? false : segment.dim,
+        sourceMap: undefined,
+      }, span);
+    }
+  }
+  return highlighted;
+}
+
+function rangesOverlap(left: SourceRange, right: SourceSpan): boolean {
+  return left.start < right.end && right.start < left.end;
+}
+
+function plainTextRow(
+  text: string,
+  style: InlineStyle,
+  sourceStart?: number,
+  sourceText = text,
+): LogicalRow {
+  return {
+    segments: [sourceStart === undefined ? { text, ...style } : sourceSegment(text, sourceText, sourceStart, style, false)],
   };
 }
 

@@ -9,6 +9,10 @@ function step(content: string): PlanStep {
   return {
     id: nextId++,
     content,
+    sourceStart: 0,
+    sourceEnd: content.length,
+    sourceStartLine: 1,
+    sourceStartColumn: 1,
     depth: 1,
     annotations: [],
   };
@@ -32,6 +36,18 @@ function rowText(row: RenderedRow): string {
 
 function rowTexts(rows: RenderedRow[]): string[] {
   return rows.map(rowText);
+}
+
+function sourceSpansForText(row: RenderedRow, text: string) {
+  let column = 0;
+  for (const segment of row.segments) {
+    const index = segment.text.indexOf(text);
+    if (index >= 0) {
+      return segment.sourceMap?.slice(index, index + text.length) ?? [];
+    }
+    column += segment.text.length;
+  }
+  assert.fail(`Could not find text ${text} in row ${column}: ${rowText(row)}`);
 }
 
 {
@@ -80,8 +96,9 @@ function rowTexts(rows: RenderedRow[]): string[] {
 }
 
 {
+  const content = "```ts\nconst answer = 42;\nconst message = \"ok\";\n```";
   const layout = computeMarkdownRows(
-    [step("```ts\nconst answer = 42;\nconst message = \"ok\";\n```")],
+    [step(content)],
     0,
     null,
     100,
@@ -111,11 +128,15 @@ function rowTexts(rows: RenderedRow[]): string[] {
       .filter((segment) => segment.text.trim().length > 0)
       .every((segment) => segment.dim !== true),
   );
+  const constRow = rows.find((row) => rowText(row).includes("const answer"));
+  assert.ok(constRow);
+  assert.equal(sourceSpansForText(constRow, "const")[0]?.start, content.indexOf("const"));
 }
 
 {
+  const content = "Paragraph with **bold** and *em* and `code`.";
   const layout = computeMarkdownRows(
-    [step("Paragraph with **bold** and *em* and `code`.")],
+    [step(content)],
     0,
     null,
     100,
@@ -125,6 +146,24 @@ function rowTexts(rows: RenderedRow[]): string[] {
   assert.ok(firstRow.segments.some((segment) => segment.text.includes("bold") && segment.bold));
   assert.ok(firstRow.segments.some((segment) => segment.text.includes("em") && segment.dim !== true));
   assert.ok(firstRow.segments.some((segment) => segment.text.includes("code") && segment.color === "yellow"));
+  assert.equal(sourceSpansForText(firstRow, "bold")[0]?.start, content.indexOf("bold"));
+  assert.equal(sourceSpansForText(firstRow, "code")[0]?.start, content.indexOf("code"));
+}
+
+{
+  const content = "A   B";
+  const layout = computeMarkdownRows([step(content)], 0, null, 80);
+  const firstRow = layout.rows[0]!;
+  const text = rowText(firstRow);
+  const displayIndex = text.indexOf("A B");
+  const sourceSpans = firstRow.segments.flatMap((segment) => segment.sourceMap ?? []);
+
+  assert.ok(displayIndex >= 0);
+  assert.deepEqual(sourceSpans.slice(-3), [
+    { start: 0, end: 1 },
+    { start: 1, end: 4 },
+    { start: 4, end: 5 },
+  ]);
 }
 
 {
@@ -234,8 +273,33 @@ function rowTexts(rows: RenderedRow[]): string[] {
 }
 
 {
+  const content = "Select only this word";
+  const selectedStart = content.indexOf("only");
   const layout = computeMarkdownRows(
-    [step("- Selectable bullet\n\nContinuation paragraph")],
+    [step(content)],
+    null,
+    null,
+    80,
+    { selectedSourceRanges: [{ start: selectedStart, end: selectedStart + "only".length }] },
+  );
+  const firstRow = layout.rows[0]!;
+
+  assert.ok(firstRow.segments.some((segment) =>
+    segment.text.includes("only") &&
+    segment.backgroundColor === "blue" &&
+    segment.color === "white",
+  ));
+  assert.ok(firstRow.segments.some((segment) =>
+    segment.text.includes("Select") &&
+    segment.backgroundColor !== "blue" &&
+    segment.color === "gray",
+  ));
+}
+
+{
+  const content = "- Selectable bullet\n\nContinuation paragraph";
+  const layout = computeMarkdownRows(
+    [step(content)],
     0,
     null,
     80,
@@ -246,6 +310,21 @@ function rowTexts(rows: RenderedRow[]): string[] {
   assert.equal(gutterRows.length, 1);
   assert.match(texts[0] ?? "", /1 ▸ - Selectable bullet/);
   assert.match(texts.join("\n"), /Continuation paragraph/);
+  assert.equal(sourceSpansForText(layout.rows[0]!, "Selectable")[0]?.start, content.indexOf("Selectable"));
+  const bulletSegment = layout.rows[0]?.segments.find((segment) => segment.text.includes("- Selectable"));
+  assert.deepEqual(bulletSegment?.sourceMap?.slice(0, 2), [null, null]);
+}
+
+{
+  const content = "| A | B |\n| - | - |\n| c | d |\n";
+  const layout = computeMarkdownRows([step(content)], 0, null, 100);
+  const text = rowTexts(layout.rows).join("\n");
+  const dataRow = layout.rows.find((row) => rowText(row).includes("c | d"));
+
+  assert.match(text, /A \| B/);
+  assert.ok(dataRow);
+  assert.equal(sourceSpansForText(dataRow, "c")[0]?.start, content.indexOf("c | d"));
+  assert.equal(sourceSpansForText(dataRow, "d")[0]?.start, content.indexOf("d |", content.indexOf("c | d")));
 }
 
 {

@@ -74,7 +74,7 @@ redline/
 │   │   ├── log-update.ts     # frame diffing
 │   │   ├── terminal.ts       # ANSI serialization and terminal modes
 │   │   ├── markdownRows.ts   # Markdown tokens -> rendered plan rows
-│   │   ├── selection.ts      # row selection -> parsed step indices
+│   │   ├── selection.ts      # point selection -> markdown source ranges
 │   │   ├── mouse.ts          # SGR mouse decoding
 │   │   ├── components/       # Box, Text, ScrollBox, Divider, AlternateScreen
 │   │   └── hooks/            # useInput, useMouse, useTerminalSize
@@ -187,12 +187,10 @@ The primary workflow is scroll and select:
 
 - Mouse wheel scrolls the `ScrollBox`.
 - PageUp, PageDown, Home, and End are keyboard scroll fallbacks.
-- Dragging inside the plan body creates an app-managed row selection.
-- Shift-click extends the current row selection.
-- `selection.ts` resolves selected rendered rows back to unique parsed step indices.
-- Annotation keys apply to selected parsed steps.
-
-V1 selection maps rendered rows to whole parsed steps. Exact Markdown character/source-span annotations are a separate follow-up because source offsets must survive tokenization, wrapping, and terminal cell hit testing.
+- Dragging inside the plan body creates an app-managed point selection.
+- Shift-click extends the current point selection.
+- `selection.ts` resolves selected rendered cells back to Markdown source ranges per parsed step.
+- Annotation keys apply to selected source ranges, with whole-step fallback when the full rendered step is selected.
 
 ### 6. Feedback Formatting
 
@@ -254,9 +252,9 @@ The no-TTY hook environment is not solvable from inside the hook subprocess. Ope
 
 The fullscreen renderer needs stdout for terminal drawing. The hook response therefore goes through a separate file, which the wrapper script relays back to Claude Code.
 
-### Why Whole-Step Annotations for Now?
+### Why App-Managed Source-Range Selection?
 
-Rows know which parsed step they belong to, but not the exact Markdown source offsets for every rendered cell. Whole-step annotations preserve the existing feedback format while leaving a clear path toward source-span annotation later.
+Rendered cells carry Markdown source offsets from parsing through token rendering and wrapping. Redline uses those offsets to return exact selected excerpts in feedback while preserving whole-step annotation formatting for full-step selections and older annotations.
 
 ### Why Mouse Selection Instead of Native Terminal Selection?
 
