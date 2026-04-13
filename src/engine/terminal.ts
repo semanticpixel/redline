@@ -15,16 +15,29 @@ const DISABLE_BUTTON_MOUSE = "\u001b[?1002l";
 const ENABLE_SGR_MOUSE = "\u001b[?1006h";
 const DISABLE_SGR_MOUSE = "\u001b[?1006l";
 
-const ANSI_COLORS: Record<string, number> = {
-  black: 30,
-  red: 31,
-  green: 32,
-  yellow: 33,
-  blue: 34,
-  magenta: 35,
-  cyan: 36,
-  white: 37,
-  gray: 90,
+const ANSI_FOREGROUNDS: Record<string, string> = {
+  black: "30",
+  red: "31",
+  green: "32",
+  yellow: "33",
+  blue: "34",
+  magenta: "35",
+  cyan: "36",
+  white: "37",
+  gray: "90",
+  lightGray: "38;5;250",
+};
+
+const ANSI_BACKGROUNDS: Record<string, string> = {
+  black: "40",
+  red: "41",
+  green: "42",
+  yellow: "43",
+  blue: "44",
+  magenta: "45",
+  cyan: "46",
+  white: "47",
+  gray: "100",
 };
 
 export function moveTo(row: number, col: number): string {
@@ -116,25 +129,25 @@ export function supportsSynchronizedOutput(): boolean {
 }
 
 function styleToAnsi(next: CellStyle, previous: CellStyle): string {
-  const codes: number[] = [0];
+  const codes: string[] = ["0"];
 
   if (next.bold) {
-    codes.push(1);
+    codes.push("1");
   }
   if (next.dim) {
-    codes.push(2);
+    codes.push("2");
   }
 
-  const foreground = next.color ? ANSI_COLORS[next.color] : undefined;
+  const foreground = next.color ? ANSI_FOREGROUNDS[next.color] : undefined;
   if (foreground !== undefined) {
     codes.push(foreground);
   }
 
   const background = next.backgroundColor
-    ? ANSI_COLORS[next.backgroundColor]
+    ? ANSI_BACKGROUNDS[next.backgroundColor]
     : undefined;
   if (background !== undefined) {
-    codes.push(background + 10);
+    codes.push(background);
   }
 
   if (
