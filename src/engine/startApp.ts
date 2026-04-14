@@ -35,7 +35,9 @@ export async function startApp(initialSteps: PlanStep[]): Promise<void> {
   };
 
   const handleQuit = (): void => {
-    finalize(1);
+    finalize(1, () => {
+      emitDeny("Review cancelled by user.");
+    });
   };
 
   const handleSignal = (): void => {

@@ -80,20 +80,20 @@ while [ ! -f "$OUTPUT_FILE" ]; do
     sleep 0.5
     ELAPSED=$((ELAPSED + 1))
 
-    # Hard timeout — auto-approve so Claude isn't stuck
+    # Hard timeout — deny so the plan is re-presented rather than silently approved
     if [ "$ELAPSED" -ge "$((TIMEOUT * 2))" ]; then
-        echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}' >&2
-        echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+        echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Review timed out — the redline TUI did not respond within the timeout window. Please re-present the plan."}}}'
         rm -f "$STDIN_FILE" "$HEARTBEAT_FILE"
         exit 0
     fi
 
     # Heartbeat check — if the TUI started but the heartbeat is stale,
-    # the user likely closed the tab without submitting
+    # the user likely closed the tab without submitting.
+    # Deny so the plan is re-presented rather than silently approved.
     if [ -f "$HEARTBEAT_FILE" ]; then
         HEARTBEAT_AGE=$(( $(date +%s) - $(stat -f %m "$HEARTBEAT_FILE" 2>/dev/null || stat -c %Y "$HEARTBEAT_FILE" 2>/dev/null || echo 0) ))
         if [ "$HEARTBEAT_AGE" -ge "$HEARTBEAT_STALE" ]; then
-            echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+            echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Review interrupted — the redline TUI was closed without submitting. Please re-present the plan."}}}'
             rm -f "$STDIN_FILE" "$HEARTBEAT_FILE"
             exit 0
         fi
