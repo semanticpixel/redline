@@ -1,6 +1,43 @@
 import fs from "fs";
 import type { HookInput, HookOutput } from "../types.js";
 
+const HEARTBEAT_INTERVAL_MS = 10_000;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+function heartbeatPath(): string | null {
+  const outputFile = process.env.REDLINE_OUTPUT_FILE;
+  return outputFile ? `${outputFile}.heartbeat` : null;
+}
+
+/** Start writing a heartbeat file so the hook script knows we're alive. */
+export function startHeartbeat(): void {
+  const path = heartbeatPath();
+  if (!path) return;
+
+  const touch = () => {
+    try {
+      fs.writeFileSync(path, String(Date.now()));
+    } catch {}
+  };
+
+  touch();
+  heartbeatTimer = setInterval(touch, HEARTBEAT_INTERVAL_MS);
+}
+
+/** Stop the heartbeat and remove the file. */
+export function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  const path = heartbeatPath();
+  if (path) {
+    try {
+      fs.unlinkSync(path);
+    } catch {}
+  }
+}
+
 /**
  * Read the hook payload from stdin.
  * Claude Code pipes JSON to our process when the PermissionRequest fires.

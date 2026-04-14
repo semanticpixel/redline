@@ -1,6 +1,6 @@
 import React from "react";
 import type { PlanStep } from "../types.js";
-import { emitApprove, emitDeny } from "../utils/hookIO.js";
+import { emitApprove, emitDeny, startHeartbeat, stopHeartbeat } from "../utils/hookIO.js";
 import { formatFeedback } from "../utils/parsePlan.js";
 import RedlineApp from "./app.js";
 import { createRoot } from "./root.js";
@@ -9,11 +9,14 @@ export async function startApp(initialSteps: PlanStep[]): Promise<void> {
   const root = await createRoot();
   let closed = false;
 
+  startHeartbeat();
+
   const finalize = (code: number, output?: () => void): void => {
     if (closed) {
       return;
     }
     closed = true;
+    stopHeartbeat();
     root.unmount();
     cleanupSignalHandlers();
     output?.();
@@ -36,7 +39,9 @@ export async function startApp(initialSteps: PlanStep[]): Promise<void> {
   };
 
   const handleSignal = (): void => {
-    finalize(1);
+    finalize(0, () => {
+      emitDeny("Review cancelled. Please re-present the plan.");
+    });
   };
 
   const handleException = (error: unknown): void => {
