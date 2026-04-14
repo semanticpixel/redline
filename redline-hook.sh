@@ -69,16 +69,34 @@ else
 fi
 
 # Wait for redline to finish (output file appears when user submits)
-TIMEOUT=300
+# The Node process writes a heartbeat file every 10s while the TUI is active.
+# If the heartbeat goes stale (user closed the tab), we auto-approve early
+# instead of waiting the full timeout.
+TIMEOUT=900
+HEARTBEAT_FILE="${OUTPUT_FILE}.heartbeat"
+HEARTBEAT_STALE=60
 ELAPSED=0
 while [ ! -f "$OUTPUT_FILE" ]; do
     sleep 0.5
     ELAPSED=$((ELAPSED + 1))
+
+    # Hard timeout — auto-approve so Claude isn't stuck
     if [ "$ELAPSED" -ge "$((TIMEOUT * 2))" ]; then
-        # Timed out — auto-approve so Claude isn't stuck
+        echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}' >&2
         echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
-        rm -f "$STDIN_FILE"
+        rm -f "$STDIN_FILE" "$HEARTBEAT_FILE"
         exit 0
+    fi
+
+    # Heartbeat check — if the TUI started but the heartbeat is stale,
+    # the user likely closed the tab without submitting
+    if [ -f "$HEARTBEAT_FILE" ]; then
+        HEARTBEAT_AGE=$(( $(date +%s) - $(stat -f %m "$HEARTBEAT_FILE" 2>/dev/null || stat -c %Y "$HEARTBEAT_FILE" 2>/dev/null || echo 0) ))
+        if [ "$HEARTBEAT_AGE" -ge "$HEARTBEAT_STALE" ]; then
+            echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+            rm -f "$STDIN_FILE" "$HEARTBEAT_FILE"
+            exit 0
+        fi
     fi
 done
 
@@ -89,4 +107,4 @@ sleep 0.2
 cat "$OUTPUT_FILE"
 
 # Cleanup
-rm -f "$STDIN_FILE" "$OUTPUT_FILE"
+rm -f "$STDIN_FILE" "$OUTPUT_FILE" "$HEARTBEAT_FILE"

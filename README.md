@@ -62,7 +62,7 @@ Add the hook to `~/.claude/settings.json`, using the absolute path to your `redl
           {
             "type": "command",
             "command": "/absolute/path/to/redline/redline-hook.sh",
-            "timeout": 300
+            "timeout": 900
           }
         ]
       }
@@ -70,6 +70,8 @@ Add the hook to `~/.claude/settings.json`, using the absolute path to your `redl
   }
 }
 ```
+
+The `timeout` value (in seconds) controls how long Claude Code waits for the hook before auto-proceeding. Set it high enough for thorough reviews — 900 seconds (15 minutes) is recommended. Redline uses a heartbeat to detect abandoned sessions, so it won't make Claude wait the full timeout if you close the tab early.
 
 Restart Claude Code after adding the hook.
 
