@@ -1,5 +1,5 @@
 import React from "react";
-import type { PlanStep } from "../types.js";
+import type { GlobalComment, PlanStep } from "../types.js";
 import { emitApprove, emitDeny, startHeartbeat, stopHeartbeat } from "../utils/hookIO.js";
 import { formatFeedback } from "../utils/parsePlan.js";
 import RedlineApp from "./app.js";
@@ -23,8 +23,8 @@ export async function startApp(initialSteps: PlanStep[]): Promise<void> {
     process.exit(code);
   };
 
-  const handleSubmit = (steps: PlanStep[]): void => {
-    const feedback = formatFeedback(steps);
+  const handleSubmit = (steps: PlanStep[], globalComments: GlobalComment[]): void => {
+    const feedback = formatFeedback(steps, globalComments);
     finalize(0, () => {
       if (feedback) {
         emitDeny(feedback);

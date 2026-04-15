@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationTarget, PlanStep } from "../types.js";
+import type { Annotation, AnnotationTarget, GlobalComment, PlanStep } from "../types.js";
 
 type SourceLine = {
   text: string;
@@ -84,29 +84,41 @@ export function parsePlan(markdown: string): PlanStep[] {
  * Format annotations into structured feedback for Claude Code.
  * This becomes the "deny" message sent back through the hook.
  */
-export function formatFeedback(steps: PlanStep[]): string {
+export function formatFeedback(steps: PlanStep[], globalComments: GlobalComment[] = []): string {
   const annotatedSteps = steps.filter((s) => s.annotations.length > 0);
+  const hasGlobal = globalComments.length > 0;
+  const hasStepAnnotations = annotatedSteps.length > 0;
 
-  if (annotatedSteps.length === 0) {
+  if (!hasGlobal && !hasStepAnnotations) {
     return "";
   }
 
-  const sections = annotatedSteps.map((step) => {
-    const stepPreview = step.content.split("\n")[0].trim();
-    const annotations = step.annotations
-      .map((a) => formatAnnotation(a))
-      .join("\n");
+  const parts: string[] = ["Plan feedback from redline review:", ""];
 
-    return `On step: "${stepPreview}"\n${annotations}`;
-  });
+  if (hasGlobal) {
+    parts.push("General comments:");
+    for (const gc of globalComments) {
+      parts.push(`  💬 ${gc.text}`);
+    }
+    if (hasStepAnnotations) {
+      parts.push("");
+    }
+  }
 
-  return [
-    "Plan feedback from redline review:",
-    "",
-    ...sections,
-    "",
-    "Please revise the plan addressing the above annotations, then present the updated plan.",
-  ].join("\n");
+  if (hasStepAnnotations) {
+    const sections = annotatedSteps.map((step) => {
+      const stepPreview = step.content.split("\n")[0].trim();
+      const annotations = step.annotations
+        .map((a) => formatAnnotation(a))
+        .join("\n");
+
+      return `On step: "${stepPreview}"\n${annotations}`;
+    });
+    parts.push(...sections);
+  }
+
+  parts.push("", "Please revise the plan addressing the above annotations, then present the updated plan.");
+  return parts.join("\n");
 }
 
 function formatAnnotation(annotation: Annotation): string {

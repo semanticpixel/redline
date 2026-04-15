@@ -42,6 +42,12 @@ export interface Annotation {
   replacement?: string;
 }
 
+/** A plan-wide comment not tied to any specific step or selection */
+export interface GlobalComment {
+  id: string;
+  text: string;
+}
+
 /** The JSON payload Claude Code sends via stdin on ExitPlanMode */
 export interface HookInput {
   session_id: string;

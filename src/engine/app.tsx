@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import type { Annotation, AnnotationTarget, PlanStep, SourceRange } from "../types.js";
+import type { Annotation, AnnotationTarget, GlobalComment, PlanStep, SourceRange } from "../types.js";
 import { AlternateScreen } from "./components/AlternateScreen.js";
 import Box from "./components/Box.js";
 import { Divider } from "./components/Divider.js";
@@ -16,7 +16,7 @@ import type { Segment } from "./renderTypes.js";
 
 type Props = {
   initialSteps: PlanStep[];
-  onSubmit: (steps: PlanStep[]) => void;
+  onSubmit: (steps: PlanStep[], globalComments: GlobalComment[]) => void;
   onQuit: () => void;
 };
 
@@ -61,8 +61,10 @@ export default function RedlineApp({
   const [pointSelection, setPointSelection] = useState<PointSelection | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [isAnnotating, setIsAnnotating] = useState(false);
+  const [isGlobalAnnotating, setIsGlobalAnnotating] = useState(false);
   const [annotationType, setAnnotationType] = useState<Annotation["type"]>("comment");
   const [inputValue, setInputValue] = useState("");
+  const [globalComments, setGlobalComments] = useState<GlobalComment[]>([]);
 
   const footerHeight = isAnnotating ? ANNOTATION_FOOTER_HEIGHT : REVIEW_FOOTER_HEIGHT;
   const bodyHeight = Math.max(1, size.rows - HEADER_HEIGHT - footerHeight);
@@ -74,7 +76,7 @@ export default function RedlineApp({
     selectedSourceRanges: selectedRanges.map((selection) => selection.range),
   });
   const selectedCount = selectedRanges.length;
-  const totalAnnotations = steps.reduce((sum, step) => sum + step.annotations.length, 0);
+  const totalAnnotations = steps.reduce((sum, step) => sum + step.annotations.length, 0) + globalComments.length;
   const planTitle = steps[0]?.content.split("\n")[0]?.replace(/^#+\s*/, "") ?? "";
 
   useMouse((event) => {
@@ -162,22 +164,37 @@ export default function RedlineApp({
       if (key.escape) {
         setInputValue("");
         setIsAnnotating(false);
+        setIsGlobalAnnotating(false);
         setPointSelection(null);
         setStatusMessage("");
         return;
       }
 
       if (key.return) {
-        commitAnnotation({
-          annotationType,
-          inputValue,
-          selectedRanges,
-          steps,
-          setInputValue,
-          setIsAnnotating,
-          setStatusMessage,
-          setSteps,
-        });
+        if (isGlobalAnnotating) {
+          const text = inputValue.trim();
+          if (text) {
+            setGlobalComments((current) => [
+              ...current,
+              { id: `global-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text },
+            ]);
+            setStatusMessage("global comment added");
+          }
+          setInputValue("");
+          setIsAnnotating(false);
+          setIsGlobalAnnotating(false);
+        } else {
+          commitAnnotation({
+            annotationType,
+            inputValue,
+            selectedRanges,
+            steps,
+            setInputValue,
+            setIsAnnotating,
+            setStatusMessage,
+            setSteps,
+          });
+        }
         return;
       }
 
@@ -232,6 +249,15 @@ export default function RedlineApp({
       return;
     }
 
+    if (input === "C") {
+      setAnnotationType("comment");
+      setInputValue("");
+      setStatusMessage("");
+      setIsGlobalAnnotating(true);
+      setIsAnnotating(true);
+      return;
+    }
+
     if (input === "c") {
       beginAnnotation("comment", selectedCount, setAnnotationType, setInputValue, setIsAnnotating, setStatusMessage);
       return;
@@ -259,7 +285,12 @@ export default function RedlineApp({
 
     if (input === "u") {
       if (selectedCount === 0) {
-        setStatusMessage("select text first");
+        if (globalComments.length > 0) {
+          setGlobalComments((current) => current.slice(0, -1));
+          setStatusMessage("undid last global comment");
+        } else {
+          setStatusMessage("select text first");
+        }
         return;
       }
       setSteps((current) => undoLastAnnotation(current, selectedIndices));
@@ -268,7 +299,7 @@ export default function RedlineApp({
     }
 
     if (key.return) {
-      onSubmit(steps);
+      onSubmit(steps, globalComments);
     }
   });
 
@@ -303,7 +334,9 @@ export default function RedlineApp({
               segments={[
                 { text: `${TYPE_ICONS[annotationType]} `, color: TYPE_COLORS[annotationType], bold: true },
                 {
-                  text: `${TYPE_LABELS[annotationType]} (${selectedCount} range${selectedCount === 1 ? "" : "s"})`,
+                  text: isGlobalAnnotating
+                    ? "Global comment"
+                    : `${TYPE_LABELS[annotationType]} (${selectedCount} range${selectedCount === 1 ? "" : "s"})`,
                   color: TYPE_COLORS[annotationType],
                   bold: true,
                 },
@@ -336,6 +369,8 @@ export default function RedlineApp({
                 { text: "/Shift-click select  ", color: "gray" },
                 { text: "c", color: "yellow", bold: true },
                 { text: " comment  ", color: "gray" },
+                { text: "C", color: "yellow", bold: true },
+                { text: " global  ", color: "gray" },
                 { text: "?", color: "cyan", bold: true },
                 { text: " question  ", color: "gray" },
                 { text: "d", color: "red", bold: true },
