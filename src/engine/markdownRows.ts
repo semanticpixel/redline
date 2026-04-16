@@ -966,18 +966,10 @@ function sourceMapForText(text: string, sourceStart: number): SourceSpan[] {
 function sourceMapForNormalizedText(sourceText: string, sourceStart: number): SourceSpan[] {
   const sourceMap: SourceSpan[] = [];
   for (const match of sourceText.matchAll(/\s+|\S/g)) {
-    const text = match[0];
     const start = sourceStart + (match.index ?? 0);
-    if (/^\s+$/.test(text)) {
-      sourceMap.push({
-        start,
-        end: start + text.length,
-      });
-      continue;
-    }
     sourceMap.push({
       start,
-      end: start + text.length,
+      end: start + match[0].length,
     });
   }
   return sourceMap;

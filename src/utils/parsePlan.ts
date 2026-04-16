@@ -11,7 +11,8 @@ type SourceLine = {
  * Strategy: split on headings and top-level list items so each
  * "step" in the plan is independently addressable.
  */
-export function parsePlan(markdown: string): PlanStep[] {
+export function parsePlan(rawMarkdown: string): PlanStep[] {
+  const markdown = rawMarkdown.replace(/\r\n?/g, "\n");
   const steps: PlanStep[] = [];
   const lineStarts = computeLineStarts(markdown);
   let currentLines: SourceLine[] = [];
@@ -98,7 +99,7 @@ export function formatFeedback(steps: PlanStep[], globalComments: GlobalComment[
   if (hasGlobal) {
     parts.push("General comments:");
     for (const gc of globalComments) {
-      parts.push(`  💬 ${gc.text}`);
+      parts.push(formatLabeledBody("  💬 Comment", gc.text));
     }
     if (hasStepAnnotations) {
       parts.push("");
@@ -135,18 +136,32 @@ function formatAnnotation(annotation: Annotation): string {
 function formatAnnotationBody(annotation: Annotation, targeted: boolean): string {
   switch (annotation.type) {
     case "comment":
-      return `  💬 Comment: ${annotation.text}`;
+      return formatLabeledBody("  💬 Comment", annotation.text);
     case "question":
-      return `  ❓ Question: ${annotation.text}`;
-    case "delete":
-      return targeted
-        ? `  🗑️  Remove selected range${annotation.text ? `: ${annotation.text}` : ""}`
-        : `  🗑️  Remove this step${annotation.text ? `: ${annotation.text}` : ""}`;
-    case "replace":
-      return targeted
-        ? `  ✏️  Replace selection with: ${annotation.replacement || annotation.text}`
-        : `  ✏️  Replace with: ${annotation.replacement || annotation.text}`;
+      return formatLabeledBody("  ❓ Question", annotation.text);
+    case "delete": {
+      const label = targeted ? "  🗑️  Remove selected range" : "  🗑️  Remove this step";
+      return annotation.text ? formatLabeledBody(label, annotation.text) : label;
+    }
+    case "replace": {
+      const label = targeted ? "  ✏️  Replace selection with" : "  ✏️  Replace with";
+      return formatLabeledBody(label, annotation.replacement || annotation.text);
+    }
   }
+}
+
+function formatLabeledBody(label: string, text: string): string {
+  if (!text.includes("\n")) {
+    return `${label}: ${text}`;
+  }
+
+  const fence = markdownFence(text);
+  return [
+    `${label}:`,
+    `  ${fence}markdown`,
+    indentLines(text, "  "),
+    `  ${fence}`,
+  ].join("\n");
 }
 
 function formatTarget(target: AnnotationTarget): string {

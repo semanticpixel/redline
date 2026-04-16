@@ -80,4 +80,28 @@ import { formatFeedback, parsePlan } from "./parsePlan.js";
   assert.match(formatFeedback([step]), /````markdown\n  value ``` inside\n  ````/);
 }
 
+{
+  const steps = parsePlan("## Step 1\r\nDo X\r\n## Step 2\r\nDo Y");
+
+  assert.equal(steps.length, 2);
+  assert.equal(steps[0]?.content, "## Step 1\nDo X");
+  assert.equal(steps[1]?.sourceStartLine, 3);
+}
+
+{
+  const [step] = parsePlan("## Multiline");
+  assert.ok(step);
+  step.annotations.push({
+    id: "multi",
+    type: "replace",
+    text: "line one\nline two",
+    replacement: "line one\nline two",
+  });
+
+  const feedback = formatFeedback([step], [{ id: "global", text: "first\nsecond" }]);
+
+  assert.match(feedback, /General comments:\n  💬 Comment:\n  ```markdown\n  first\n  second\n  ```/);
+  assert.match(feedback, /✏️  Replace with:\n  ```markdown\n  line one\n  line two\n  ```/);
+}
+
 console.log("parsePlan tests passed");

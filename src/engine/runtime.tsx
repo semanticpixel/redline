@@ -229,11 +229,13 @@ export default class MiniRuntime {
       shift: Boolean(key.shift),
       tab: key.name === "tab",
       ctrl: Boolean(key.ctrl),
+      meta: Boolean(key.meta),
       name: key.name,
     };
 
-    for (let index = this.listeners.length - 1; index >= 0; index--) {
-      const listener = this.listeners[index]!;
+    const snapshot = this.listeners.slice();
+    for (let index = snapshot.length - 1; index >= 0; index--) {
+      const listener = snapshot[index]!;
       if (!listener.isActive) {
         continue;
       }
@@ -256,8 +258,9 @@ export default class MiniRuntime {
   };
 
   private dispatchMouse(event: MouseEvent): void {
-    for (let index = this.mouseListeners.length - 1; index >= 0; index--) {
-      const listener = this.mouseListeners[index]!;
+    const snapshot = this.mouseListeners.slice();
+    for (let index = snapshot.length - 1; index >= 0; index--) {
+      const listener = snapshot[index]!;
       if (!listener.isActive) {
         continue;
       }

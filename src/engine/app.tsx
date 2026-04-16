@@ -1,5 +1,11 @@
 import React, { useRef, useState } from "react";
 import type { Annotation, AnnotationTarget, GlobalComment, PlanStep, SourceRange } from "../types.js";
+import {
+  appendAnnotationInput,
+  appendAnnotationNewline,
+  buildAnnotationInputDisplay,
+  visibleAnnotationInputLineLimit,
+} from "./annotationInput.js";
 import { AlternateScreen } from "./components/AlternateScreen.js";
 import Box from "./components/Box.js";
 import { Divider } from "./components/Divider.js";
@@ -43,7 +49,7 @@ const TYPE_ICONS: Record<Annotation["type"], string> = {
 
 const HEADER_HEIGHT = 3;
 const REVIEW_FOOTER_HEIGHT = 4;
-const ANNOTATION_FOOTER_HEIGHT = 4;
+const ANNOTATION_FOOTER_RESERVED_ROWS = HEADER_HEIGHT + 4;
 const WHEEL_SCROLL_ROWS = 3;
 const SELECTION_DRAG_THRESHOLD = 2;
 
@@ -66,9 +72,16 @@ export default function RedlineApp({
   const [inputValue, setInputValue] = useState("");
   const [globalComments, setGlobalComments] = useState<GlobalComment[]>([]);
 
-  const footerHeight = isAnnotating ? ANNOTATION_FOOTER_HEIGHT : REVIEW_FOOTER_HEIGHT;
+  const contentWidth = Math.max(1, size.columns - 2);
+  const maxVisibleAnnotationInputLines = visibleAnnotationInputLineLimit(size.rows, ANNOTATION_FOOTER_RESERVED_ROWS);
+  const annotationInputDisplay = buildAnnotationInputDisplay(
+    inputValue,
+    contentWidth,
+    maxVisibleAnnotationInputLines,
+  );
+  const annotationFooterHeight = 3 + annotationInputDisplay.visibleLineCount;
+  const footerHeight = isAnnotating ? annotationFooterHeight : REVIEW_FOOTER_HEIGHT;
   const bodyHeight = Math.max(1, size.rows - HEADER_HEIGHT - footerHeight);
-  const contentWidth = Math.max(12, size.columns - 2);
   const baseRowLayout = computeMarkdownRows(steps, null, null, contentWidth);
   const selectedRanges = resolveSelectedSourceRanges(baseRowLayout, pointSelection);
   const selectedIndices = uniqueStepIndices(selectedRanges);
@@ -78,6 +91,34 @@ export default function RedlineApp({
   const selectedCount = selectedRanges.length;
   const totalAnnotations = steps.reduce((sum, step) => sum + step.annotations.length, 0) + globalComments.length;
   const planTitle = steps[0]?.content.split("\n")[0]?.replace(/^#+\s*/, "") ?? "";
+
+  const saveAnnotationInput = (): void => {
+    if (isGlobalAnnotating) {
+      const text = inputValue.trim();
+      if (text) {
+        setGlobalComments((current) => [
+          ...current,
+          { id: `global-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text },
+        ]);
+        setStatusMessage("global comment added");
+      }
+      setInputValue("");
+      setIsAnnotating(false);
+      setIsGlobalAnnotating(false);
+      return;
+    }
+
+    commitAnnotation({
+      annotationType,
+      inputValue,
+      selectedRanges,
+      steps,
+      setInputValue,
+      setIsAnnotating,
+      setStatusMessage,
+      setSteps,
+    });
+  };
 
   useMouse((event) => {
     if (event.type === "wheel") {
@@ -155,11 +196,6 @@ export default function RedlineApp({
   });
 
   useInput((input, key) => {
-    if (input === "q" || (key.ctrl && key.name === "c")) {
-      onQuit();
-      return;
-    }
-
     if (isAnnotating) {
       if (key.escape) {
         setInputValue("");
@@ -170,31 +206,13 @@ export default function RedlineApp({
         return;
       }
 
+      if (isSaveInputKey(input, key)) {
+        saveAnnotationInput();
+        return;
+      }
+
       if (key.return) {
-        if (isGlobalAnnotating) {
-          const text = inputValue.trim();
-          if (text) {
-            setGlobalComments((current) => [
-              ...current,
-              { id: `global-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text },
-            ]);
-            setStatusMessage("global comment added");
-          }
-          setInputValue("");
-          setIsAnnotating(false);
-          setIsGlobalAnnotating(false);
-        } else {
-          commitAnnotation({
-            annotationType,
-            inputValue,
-            selectedRanges,
-            steps,
-            setInputValue,
-            setIsAnnotating,
-            setStatusMessage,
-            setSteps,
-          });
-        }
+        setInputValue(appendAnnotationNewline);
         return;
       }
 
@@ -217,9 +235,14 @@ export default function RedlineApp({
         return;
       }
 
-      if (input && !key.ctrl) {
-        setInputValue((current) => current + input);
+      if (input && !key.ctrl && !key.meta) {
+        setInputValue((current) => appendAnnotationInput(current, input));
       }
+      return;
+    }
+
+    if (input === "q" || (key.ctrl && key.name === "c")) {
+      onQuit();
       return;
     }
 
@@ -329,7 +352,7 @@ export default function RedlineApp({
         <Divider color="yellow" dim />
 
         {isAnnotating ? (
-          <Box paddingX={1} flexShrink={0}>
+          <Box paddingX={1} height={annotationInputDisplay.visibleLineCount + 2} flexShrink={0}>
             <InlineTextLine
               segments={[
                 { text: `${TYPE_ICONS[annotationType]} `, color: TYPE_COLORS[annotationType], bold: true },
@@ -342,11 +365,20 @@ export default function RedlineApp({
                 },
               ]}
             />
-            <Text color="white">{truncate(`> ${inputValue}█`, contentWidth)}</Text>
+            <Text
+              color="white"
+              width={contentWidth}
+              height={annotationInputDisplay.visibleLineCount}
+              flexShrink={0}
+            >
+              {annotationInputDisplay.text}
+            </Text>
             <InlineTextLine
               segments={[
-                { text: "Enter", color: "green", bold: true },
+                { text: "Ctrl+S", color: "green", bold: true },
                 { text: " save  ", color: "gray" },
+                { text: "Enter", color: "green", bold: true },
+                { text: " newline  ", color: "gray" },
                 { text: "Esc", color: "gray", bold: true },
                 { text: " cancel", color: "gray" },
               ]}
@@ -411,6 +443,16 @@ function InlineTextLine({ segments }: { segments: Segment[] }): React.ReactNode 
         },
       }))}
     />
+  );
+}
+
+function isSaveInputKey(input: string, key: { ctrl?: boolean; meta?: boolean; name?: string }): boolean {
+  const keyName = key.name?.toLowerCase();
+  const inputName = input.toLowerCase();
+
+  return Boolean(
+    (key.meta && (inputName === "s" || keyName === "s")) ||
+    (key.ctrl && (inputName === "s" || keyName === "s"))
   );
 }
 

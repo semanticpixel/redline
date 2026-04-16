@@ -108,12 +108,10 @@ function syncLayout(node: MiniNode): void {
     height: Math.floor(node.yogaNode.getComputedHeight()),
   };
 
-  const children = node.children.filter((child) => child.yogaNode);
-  for (let index = 0; index < children.length; index++) {
-    const child = children[index]!;
-    const childYoga = node.yogaNode.getChild(index);
-    child.yogaNode = childYoga;
-    syncLayout(child);
+  for (const child of node.children) {
+    if (child.yogaNode) {
+      syncLayout(child);
+    }
   }
 }
 
