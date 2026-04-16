@@ -6,6 +6,7 @@ import {
   createRootNode,
   insertBeforeNode,
   markDirty,
+  removeAllChildNodes,
   removeChildNode,
   setSegments,
   setStyle,
@@ -77,7 +78,7 @@ export const reconciler = Reconciler({
   shouldSetTextContent: () => false,
   getPublicInstance: (instance: MiniNode) => instance,
   clearContainer(container: MiniRootNode) {
-    container.children = [];
+    removeAllChildNodes(container);
     markDirty(container);
     return false;
   },

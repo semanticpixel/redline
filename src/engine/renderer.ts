@@ -87,8 +87,10 @@ function renderNode(
       for (const segment of node.segments) {
         const segmentStyle = mergeTextStyle(textStyle, segment.style ?? {});
         const styleId = stylePool.intern(segmentStyle);
-        output.write(cursorX, y, segment.text.slice(0, Math.max(0, node.layout.width - (cursorX - x))), styleId);
-        cursorX += segment.text.length;
+        const maxChars = Math.max(0, node.layout.width - (cursorX - x));
+        const sliced = segment.text.slice(0, maxChars);
+        output.write(cursorX, y, sliced, styleId);
+        cursorX += sliced.length;
         if (cursorX >= x + node.layout.width) {
           break;
         }

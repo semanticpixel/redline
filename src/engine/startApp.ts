@@ -48,19 +48,29 @@ export async function startApp(initialSteps: PlanStep[]): Promise<void> {
 
   const handleException = (error: unknown): void => {
     finalize(1, () => {
-      process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      process.stderr.write(`${message}\n`);
+      if (process.env.REDLINE_OUTPUT_FILE) {
+        emitDeny(`Review failed: ${message}`);
+      }
     });
+  };
+
+  const handleRejection = (reason: unknown): void => {
+    handleException(reason);
   };
 
   const cleanupSignalHandlers = (): void => {
     process.off("SIGINT", handleSignal);
     process.off("SIGTERM", handleSignal);
     process.off("uncaughtException", handleException);
+    process.off("unhandledRejection", handleRejection);
   };
 
   process.on("SIGINT", handleSignal);
   process.on("SIGTERM", handleSignal);
   process.on("uncaughtException", handleException);
+  process.on("unhandledRejection", handleRejection);
 
   root.render(
     React.createElement(RedlineApp, {
@@ -72,4 +82,3 @@ export async function startApp(initialSteps: PlanStep[]): Promise<void> {
 
   await root.waitUntilExit();
 }
-

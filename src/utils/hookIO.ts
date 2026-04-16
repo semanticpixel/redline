@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 import type { HookInput, HookOutput } from "../types.js";
 
 const HEARTBEAT_INTERVAL_MS = 10_000;
@@ -45,26 +46,40 @@ export function stopHeartbeat(): void {
 export async function readHookInput(): Promise<HookInput> {
   return new Promise((resolve, reject) => {
     let data = "";
+    let settled = false;
+
+    const settleResolve = (input: HookInput) => {
+      if (!settled) {
+        settled = true;
+        resolve(input);
+      }
+    };
+
+    const settleReject = (error: Error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
+
+    const parseAndResolve = () => {
+      try {
+        settleResolve(validateHookInput(JSON.parse(data)));
+      } catch (e) {
+        settleReject(new Error(`Failed to parse hook input: ${e}`));
+      }
+    };
+
     process.stdin.setEncoding("utf-8");
     process.stdin.on("data", (chunk) => {
       data += chunk;
     });
-    process.stdin.on("end", () => {
-      try {
-        resolve(JSON.parse(data));
-      } catch (e) {
-        reject(new Error(`Failed to parse hook input: ${e}`));
-      }
-    });
-    process.stdin.on("error", reject);
+    process.stdin.on("end", parseAndResolve);
+    process.stdin.on("error", (error) => settleReject(error));
 
     // If stdin is already ended (e.g. piped), handle gracefully
     if (process.stdin.readableEnded) {
-      try {
-        resolve(JSON.parse(data));
-      } catch (e) {
-        reject(new Error(`No hook input received`));
-      }
+      parseAndResolve();
     }
   });
 }
@@ -73,13 +88,15 @@ export async function readHookInput(): Promise<HookInput> {
  * Write hook output — either to a file (when launched via redline-hook.sh)
  * or to stdout (when piped directly for testing).
  */
-function writeOutput(output: HookOutput): void {
+export function writeOutput(output: HookOutput): void {
   const json = JSON.stringify(output);
   const outputFile = process.env.REDLINE_OUTPUT_FILE;
 
   if (outputFile) {
     // Hook mode: write to file so the wrapper script can relay it to Claude Code
-    fs.writeFileSync(outputFile, json);
+    const tmpFile = path.join(path.dirname(outputFile), `.${path.basename(outputFile)}.${process.pid}.tmp`);
+    fs.writeFileSync(tmpFile, json);
+    fs.renameSync(tmpFile, outputFile);
   } else {
     // Direct pipe mode (testing): write to stdout
     process.stdout.write(json);
@@ -109,4 +126,26 @@ export function emitDeny(message: string): void {
       },
     },
   });
+}
+
+export function validateHookInput(value: unknown): HookInput {
+  if (!value || typeof value !== "object") {
+    throw new Error("Hook input is not a JSON object");
+  }
+
+  const input = value as Partial<HookInput>;
+  if (typeof input.session_id !== "string") {
+    throw new Error("Hook input missing string session_id");
+  }
+  if (typeof input.tool_name !== "string") {
+    throw new Error("Hook input missing string tool_name");
+  }
+  if (!input.tool_input || typeof input.tool_input !== "object") {
+    throw new Error("Hook input missing tool_input object");
+  }
+  if (typeof input.tool_input.plan !== "string") {
+    throw new Error("Hook input tool_input.plan must be a string");
+  }
+
+  return input as HookInput;
 }

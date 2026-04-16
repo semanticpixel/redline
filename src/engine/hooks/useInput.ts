@@ -16,6 +16,7 @@ export interface InputKey {
   shift?: boolean;
   tab?: boolean;
   ctrl?: boolean;
+  meta?: boolean;
   name?: string;
 }
 

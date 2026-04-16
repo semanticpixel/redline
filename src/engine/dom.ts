@@ -135,9 +135,16 @@ export function removeChildNode(parent: MiniNode, child: MiniNode): void {
     parent.children.splice(index, 1);
   }
   detachYogaChild(parent, child);
+  freeYogaTree(child);
   child.parent = null;
-  child.root = null;
+  syncRoot(child, null);
   markDirty(parent);
+}
+
+export function removeAllChildNodes(parent: MiniNode): void {
+  for (const child of [...parent.children]) {
+    removeChildNode(parent, child);
+  }
 }
 
 export function setStyle(node: MiniNode, style: MiniStyle): void {
@@ -208,5 +215,23 @@ function detachYogaChild(parent: MiniNode, child: MiniNode): void {
       parent.yogaNode.removeChild(yogaChild);
       break;
     }
+  }
+}
+
+function freeYogaTree(node: MiniNode): void {
+  if (node.yogaNode) {
+    if (typeof node.yogaNode.freeRecursive === "function") {
+      node.yogaNode.freeRecursive();
+    } else {
+      node.yogaNode.free?.();
+    }
+  }
+  clearYogaRefs(node);
+}
+
+function clearYogaRefs(node: MiniNode): void {
+  node.yogaNode = null;
+  for (const child of node.children) {
+    clearYogaRefs(child);
   }
 }

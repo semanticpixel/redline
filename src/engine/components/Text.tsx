@@ -1,7 +1,11 @@
 import React from "react";
 import type { MiniStyle, MiniTextSegment } from "../dom.js";
 
-export interface TextProps extends Pick<MiniStyle, "color" | "backgroundColor" | "bold" | "dim"> {
+export interface TextProps
+  extends Pick<
+    MiniStyle,
+    "color" | "backgroundColor" | "bold" | "dim" | "height" | "width" | "flexShrink"
+  > {
   children?: React.ReactNode;
   segments?: MiniTextSegment[];
 }

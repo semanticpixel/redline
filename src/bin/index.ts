@@ -1,6 +1,6 @@
 import fs from "fs";
 import { startApp } from "../engine/startApp.js";
-import { readHookInput } from "../utils/hookIO.js";
+import { emitDeny, readHookInput } from "../utils/hookIO.js";
 import { parsePlan } from "../utils/parsePlan.js";
 
 async function main() {
@@ -20,10 +20,12 @@ async function main() {
 
       if (!planMarkdown) {
         process.stderr.write("redline: no plan found in hook input\n");
+        emitHookModeDeny("redline: no plan found in hook input");
         process.exit(1);
       }
     } catch (err) {
       process.stderr.write(`redline: failed to read hook input — ${err}\n`);
+      emitHookModeDeny(`redline: failed to read hook input — ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
 
@@ -41,6 +43,7 @@ async function main() {
       process.stderr.write(
         `redline: could not open /dev/tty for interactive input — ${err}\n`
       );
+      emitHookModeDeny(`redline: could not open /dev/tty for interactive input — ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
   }
@@ -49,6 +52,7 @@ async function main() {
 
   if (steps.length === 0) {
     process.stderr.write("redline: plan parsed to 0 steps\n");
+    emitHookModeDeny("redline: plan parsed to 0 steps");
     process.exit(1);
   }
 
@@ -83,4 +87,15 @@ const DEMO_PLAN = `# Refactor Authentication Module
 - Deploy in stages: database → packages → services
 `;
 
-main();
+main().catch((err) => {
+  const message = err instanceof Error ? err.stack ?? err.message : String(err);
+  process.stderr.write(`redline: ${message}\n`);
+  emitHookModeDeny(`redline: ${message}`);
+  process.exit(1);
+});
+
+function emitHookModeDeny(message: string): void {
+  if (process.env.REDLINE_OUTPUT_FILE) {
+    emitDeny(message);
+  }
+}

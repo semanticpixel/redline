@@ -15,12 +15,23 @@ if [ ! -f "$REDLINE_BIN" ]; then
     fi
 fi
 
-# Unique temp files per invocation (PID avoids collisions)
-STDIN_FILE="/tmp/redline-stdin-$$.json"
-OUTPUT_FILE="/tmp/redline-output-$$.json"
+# Unique temp files per invocation
+TMP_DIR="${TMPDIR:-/tmp}"
+STDIN_FILE="$(mktemp "$TMP_DIR/redline-stdin.XXXXXX.json")"
+OUTPUT_FILE="$(mktemp "$TMP_DIR/redline-output.XXXXXX.json")"
+HEARTBEAT_FILE="${OUTPUT_FILE}.heartbeat"
 
-# Cleanup stale files
+# The wrapper polls for existence, so the final output path must not exist
+# until redline atomically renames the completed response into place.
 rm -f "$OUTPUT_FILE"
+
+cleanup_files() {
+    rm -f "$STDIN_FILE" "$OUTPUT_FILE" "$OUTPUT_FILE".*.tmp "$HEARTBEAT_FILE"
+}
+
+escape_applescript_string() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
 
 # Save the hook's stdin (plan JSON from Claude Code)
 cat > "$STDIN_FILE"
@@ -33,6 +44,7 @@ else
 fi
 
 TAB_CMD="export REDLINE_OUTPUT_FILE='$OUTPUT_FILE'; cat '$STDIN_FILE' | $REDLINE_CMD 2>/dev/null; exit"
+APPLESCRIPT_TAB_CMD="$(escape_applescript_string "$TAB_CMD")"
 
 # Detect terminal emulator and open a new tab
 if [ -n "$ITERM_SESSION_ID" ] || pgrep -q "iTerm2"; then
@@ -42,7 +54,7 @@ tell application "iTerm"
     tell current window
         create tab with default profile
         tell current session of current tab
-            write text "$TAB_CMD"
+            write text "$APPLESCRIPT_TAB_CMD"
         end tell
     end tell
 end tell
@@ -51,7 +63,7 @@ elif [ "$(uname)" = "Darwin" ]; then
     osascript <<APPLE
 tell application "Terminal"
     activate
-    do script "$TAB_CMD"
+    do script "$APPLESCRIPT_TAB_CMD"
 end tell
 APPLE
 else
@@ -64,6 +76,7 @@ else
         alacritty -e bash -c "$TAB_CMD"
     else
         echo "redline: no supported terminal emulator found" >&2
+        cleanup_files
         exit 1
     fi
 fi
@@ -72,18 +85,17 @@ fi
 # The Node process writes a heartbeat file every 10s while the TUI is active.
 # If the heartbeat goes stale (user closed the tab), we auto-approve early
 # instead of waiting the full timeout.
-TIMEOUT=900
-HEARTBEAT_FILE="${OUTPUT_FILE}.heartbeat"
-HEARTBEAT_STALE=60
-ELAPSED=0
+TIMEOUT_SECONDS=900
+HEARTBEAT_STALE_SECONDS=60
+HALF_SECOND_TICKS=0
 while [ ! -f "$OUTPUT_FILE" ]; do
     sleep 0.5
-    ELAPSED=$((ELAPSED + 1))
+    HALF_SECOND_TICKS=$((HALF_SECOND_TICKS + 1))
 
     # Hard timeout — deny so the plan is re-presented rather than silently approved
-    if [ "$ELAPSED" -ge "$((TIMEOUT * 2))" ]; then
+    if [ "$HALF_SECOND_TICKS" -ge "$((TIMEOUT_SECONDS * 2))" ]; then
         echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Review timed out — the redline TUI did not respond within the timeout window. Please re-present the plan."}}}'
-        rm -f "$STDIN_FILE" "$HEARTBEAT_FILE"
+        cleanup_files
         exit 0
     fi
 
@@ -91,20 +103,18 @@ while [ ! -f "$OUTPUT_FILE" ]; do
     # the user likely closed the tab without submitting.
     # Deny so the plan is re-presented rather than silently approved.
     if [ -f "$HEARTBEAT_FILE" ]; then
-        HEARTBEAT_AGE=$(( $(date +%s) - $(stat -f %m "$HEARTBEAT_FILE" 2>/dev/null || stat -c %Y "$HEARTBEAT_FILE" 2>/dev/null || echo 0) ))
-        if [ "$HEARTBEAT_AGE" -ge "$HEARTBEAT_STALE" ]; then
+        HEARTBEAT_MTIME=$(stat -f %m "$HEARTBEAT_FILE" 2>/dev/null || stat -c %Y "$HEARTBEAT_FILE" 2>/dev/null || date +%s)
+        HEARTBEAT_AGE=$(( $(date +%s) - HEARTBEAT_MTIME ))
+        if [ "$HEARTBEAT_AGE" -ge "$HEARTBEAT_STALE_SECONDS" ]; then
             echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Review interrupted — the redline TUI was closed without submitting. Please re-present the plan."}}}'
-            rm -f "$STDIN_FILE" "$HEARTBEAT_FILE"
+            cleanup_files
             exit 0
         fi
     fi
 done
 
-# Small delay to ensure file write is complete
-sleep 0.2
-
 # Send redline's response back to Claude Code
 cat "$OUTPUT_FILE"
 
 # Cleanup
-rm -f "$STDIN_FILE" "$OUTPUT_FILE" "$HEARTBEAT_FILE"
+cleanup_files
