@@ -121,6 +121,13 @@ export default function RedlineApp({
   };
 
   useMouse((event) => {
+    if (shouldIgnoreMouseForAnnotation(isAnnotating, event.type)) {
+      isDraggingRef.current = false;
+      dragAnchorRef.current = null;
+      hasDraggedRef.current = false;
+      return;
+    }
+
     if (event.type === "wheel") {
       if (isInsideBody(event.y, bodyHeight)) {
         scrollRef.current?.scrollBy(event.wheel === "up" ? -WHEEL_SCROLL_ROWS : WHEEL_SCROLL_ROWS);
@@ -428,6 +435,13 @@ export default function RedlineApp({
       </Box>
     </AlternateScreen>
   );
+}
+
+export function shouldIgnoreMouseForAnnotation(
+  isAnnotating: boolean,
+  eventType: "wheel" | "press" | "release" | "drag",
+): boolean {
+  return isAnnotating && eventType !== "wheel";
 }
 
 function InlineTextLine({ segments }: { segments: Segment[] }): React.ReactNode {
