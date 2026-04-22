@@ -376,6 +376,7 @@ function sourceSpansForText(row: RenderedRow, text: string) {
   assert.equal(content?.stepIndex, 0);
   assert.equal(annotation?.role, "annotation");
   assert.equal(annotation?.stepIndex, 3);
+  assert.equal(annotation?.annotationId, "a1");
 }
 
 console.log("markdownRows tests passed");
