@@ -18,12 +18,17 @@ import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { computeMarkdownRows } from "./markdownRows.js";
 import { extendPointSelection, resolveSelectedSourceRanges } from "./selection.js";
 import type { PointSelection, SelectedSourceRange, SelectionPoint } from "./selection.js";
-import type { Segment } from "./renderTypes.js";
+import type { RowLayout, Segment } from "./renderTypes.js";
 
 type Props = {
   initialSteps: PlanStep[];
   onSubmit: (steps: PlanStep[], globalComments: GlobalComment[]) => void;
   onQuit: () => void;
+};
+
+export type EditingAnnotationRef = {
+  stepIndex: number;
+  annotationId: string;
 };
 
 const TYPE_COLORS: Record<Annotation["type"], "yellow" | "cyan" | "red" | "green"> = {
@@ -71,6 +76,7 @@ export default function RedlineApp({
   const [annotationType, setAnnotationType] = useState<Annotation["type"]>("comment");
   const [inputValue, setInputValue] = useState("");
   const [globalComments, setGlobalComments] = useState<GlobalComment[]>([]);
+  const [editingAnnotation, setEditingAnnotation] = useState<EditingAnnotationRef | null>(null);
 
   const contentWidth = Math.max(1, size.columns - 2);
   const maxVisibleAnnotationInputLines = visibleAnnotationInputLineLimit(size.rows, ANNOTATION_FOOTER_RESERVED_ROWS);
@@ -84,11 +90,15 @@ export default function RedlineApp({
   const bodyHeight = Math.max(1, size.rows - HEADER_HEIGHT - footerHeight);
   const baseRowLayout = computeMarkdownRows(steps, null, null, contentWidth);
   const selectedRanges = resolveSelectedSourceRanges(baseRowLayout, pointSelection);
+  const editingSelection = selectedRangeForEditingAnnotation(steps, editingAnnotation);
+  const highlightedRanges = editingSelection ? [editingSelection] : selectedRanges;
   const selectedIndices = uniqueStepIndices(selectedRanges);
   const rowLayout = computeMarkdownRows(steps, null, null, contentWidth, {
-    selectedSourceRanges: selectedRanges.map((selection) => selection.range),
+    selectedSourceRanges: highlightedRanges.map((selection) => selection.range),
   });
   const selectedCount = selectedRanges.length;
+  const highlightedCount = editingSelection ? 1 : selectedCount;
+  const editingAnnotationRecord = findEditingAnnotation(steps, editingAnnotation);
   const totalAnnotations = steps.reduce((sum, step) => sum + step.annotations.length, 0) + globalComments.length;
   const planTitle = steps[0]?.content.split("\n")[0]?.replace(/^#+\s*/, "") ?? "";
 
@@ -105,6 +115,16 @@ export default function RedlineApp({
       setInputValue("");
       setIsAnnotating(false);
       setIsGlobalAnnotating(false);
+      setEditingAnnotation(null);
+      return;
+    }
+
+    if (editingAnnotationRecord) {
+      setSteps((current) => updateAnnotationText(current, editingAnnotation, inputValue));
+      setInputValue("");
+      setIsAnnotating(false);
+      setEditingAnnotation(null);
+      setStatusMessage("annotation updated");
       return;
     }
 
@@ -157,8 +177,27 @@ export default function RedlineApp({
     }
 
     const point = pointFromMouse(event.x, event.y, scrollRef.current, bodyHeight, rowLayout.rows.length, contentWidth);
+    const annotationHit = annotationHitFromPoint(rowLayout, point);
 
     if (event.type === "press") {
+      if (!event.shift && annotationHit) {
+        beginAnnotationEdit({
+          annotationHit,
+          steps,
+          setAnnotationType,
+          setEditingAnnotation,
+          setInputValue,
+          setIsAnnotating,
+          setIsGlobalAnnotating,
+          setPointSelection,
+          setStatusMessage,
+        });
+        isDraggingRef.current = false;
+        dragAnchorRef.current = null;
+        hasDraggedRef.current = false;
+        return;
+      }
+
       if (event.shift) {
         setPointSelection((current) => extendPointSelection(current, point));
         isDraggingRef.current = false;
@@ -208,8 +247,18 @@ export default function RedlineApp({
         setInputValue("");
         setIsAnnotating(false);
         setIsGlobalAnnotating(false);
+        setEditingAnnotation(null);
         setPointSelection(null);
         setStatusMessage("");
+        return;
+      }
+
+      if (editingAnnotationRecord && key.ctrl && key.name === "d") {
+        setSteps((current) => removeAnnotation(current, editingAnnotation));
+        setInputValue("");
+        setIsAnnotating(false);
+        setEditingAnnotation(null);
+        setStatusMessage("annotation removed");
         return;
       }
 
@@ -282,6 +331,7 @@ export default function RedlineApp({
     if (input === "C") {
       setAnnotationType("comment");
       setInputValue("");
+      setEditingAnnotation(null);
       setStatusMessage("");
       setIsGlobalAnnotating(true);
       setIsAnnotating(true);
@@ -366,7 +416,9 @@ export default function RedlineApp({
                 {
                   text: isGlobalAnnotating
                     ? "Global comment"
-                    : `${TYPE_LABELS[annotationType]} (${selectedCount} range${selectedCount === 1 ? "" : "s"})`,
+                    : editingAnnotationRecord
+                      ? `Editing ${TYPE_LABELS[editingAnnotationRecord.annotation.type].toLowerCase()}`
+                      : `${TYPE_LABELS[annotationType]} (${selectedCount} range${selectedCount === 1 ? "" : "s"})`,
                   color: TYPE_COLORS[annotationType],
                   bold: true,
                 },
@@ -384,6 +436,12 @@ export default function RedlineApp({
               segments={[
                 { text: "Ctrl+S", color: "green", bold: true },
                 { text: " save  ", color: "gray" },
+                ...(editingAnnotationRecord
+                  ? [
+                      { text: "Ctrl+D", color: "red" as const, bold: true },
+                      { text: " remove  ", color: "gray" as const },
+                    ]
+                  : []),
                 { text: "Enter", color: "green", bold: true },
                 { text: " newline  ", color: "gray" },
                 { text: "Esc", color: "gray", bold: true },
@@ -395,7 +453,7 @@ export default function RedlineApp({
           <Box paddingX={1} flexShrink={0}>
             <InlineTextLine
               segments={buildStatusSegments({
-                selectedCount,
+                selectedCount: highlightedCount,
                 totalAnnotations,
                 statusMessage,
               })}
@@ -444,6 +502,126 @@ export function shouldIgnoreMouseForAnnotation(
   return isAnnotating && eventType !== "wheel";
 }
 
+export function annotationHitFromPoint(
+  rowLayout: RowLayout,
+  point: SelectionPoint,
+): EditingAnnotationRef | null {
+  const row = rowLayout.rows[point.row];
+  if (row?.role !== "annotation" || row.stepIndex === undefined || !row.annotationId) {
+    return null;
+  }
+
+  return {
+    stepIndex: row.stepIndex,
+    annotationId: row.annotationId,
+  };
+}
+
+export function findEditingAnnotation(
+  steps: PlanStep[],
+  editing: EditingAnnotationRef | null,
+): { step: PlanStep; annotation: Annotation; stepIndex: number } | null {
+  if (!editing) {
+    return null;
+  }
+
+  const step = steps[editing.stepIndex];
+  const annotation = step?.annotations.find((candidate) => candidate.id === editing.annotationId);
+  if (!step || !annotation) {
+    return null;
+  }
+
+  return { step, annotation, stepIndex: editing.stepIndex };
+}
+
+export function selectedRangeForEditingAnnotation(
+  steps: PlanStep[],
+  editing: EditingAnnotationRef | null,
+): SelectedSourceRange | null {
+  const editingRecord = findEditingAnnotation(steps, editing);
+  if (!editingRecord) {
+    return null;
+  }
+
+  return selectedRangeForAnnotation(
+    editingRecord.step,
+    editingRecord.stepIndex,
+    editingRecord.annotation,
+  );
+}
+
+export function selectedRangeForAnnotation(
+  step: PlanStep,
+  stepIndex: number,
+  annotation: Annotation,
+): SelectedSourceRange {
+  return {
+    stepIndex,
+    range: annotation.target?.range ?? { start: step.sourceStart, end: step.sourceEnd },
+    wholeStep: annotation.target?.wholeStep ?? true,
+  };
+}
+
+export function annotationEditorText(annotation: Annotation): string {
+  return annotation.replacement ?? annotation.text;
+}
+
+export function updateAnnotationText(
+  steps: PlanStep[],
+  editing: EditingAnnotationRef | null,
+  inputValue: string,
+): PlanStep[] {
+  if (!editing) {
+    return steps;
+  }
+
+  const text = inputValue.trim();
+  return steps.map((step, stepIndex) => {
+    if (stepIndex !== editing.stepIndex) {
+      return step;
+    }
+
+    return {
+      ...step,
+      annotations: step.annotations.map((annotation) => {
+        if (annotation.id !== editing.annotationId) {
+          return annotation;
+        }
+
+        const nextText = annotation.type === "delete"
+          ? text || "Remove selected range"
+          : text || annotation.text;
+
+        return {
+          ...annotation,
+          text: nextText,
+          replacement: annotation.type === "replace" ? nextText : annotation.replacement,
+        };
+      }),
+    };
+  });
+}
+
+export function removeAnnotation(
+  steps: PlanStep[],
+  editing: EditingAnnotationRef | null,
+): PlanStep[] {
+  if (!editing) {
+    return steps;
+  }
+
+  return steps.map((step, stepIndex) => {
+    if (stepIndex !== editing.stepIndex) {
+      return step;
+    }
+
+    return {
+      ...step,
+      annotations: step.annotations.filter((annotation) => annotation.id !== editing.annotationId),
+    };
+  });
+}
+
 function InlineTextLine({ segments }: { segments: Segment[] }): React.ReactNode {
   return (
     <Text
@@ -468,6 +646,41 @@ function isSaveInputKey(input: string, key: { ctrl?: boolean; meta?: boolean; na
     (key.meta && (inputName === "s" || keyName === "s")) ||
     (key.ctrl && (inputName === "s" || keyName === "s"))
   );
+}
+
+function beginAnnotationEdit({
+  annotationHit,
+  steps,
+  setAnnotationType,
+  setEditingAnnotation,
+  setInputValue,
+  setIsAnnotating,
+  setIsGlobalAnnotating,
+  setPointSelection,
+  setStatusMessage,
+}: {
+  annotationHit: EditingAnnotationRef;
+  steps: PlanStep[];
+  setAnnotationType: React.Dispatch<React.SetStateAction<Annotation["type"]>>;
+  setEditingAnnotation: React.Dispatch<React.SetStateAction<EditingAnnotationRef | null>>;
+  setInputValue: React.Dispatch<React.SetStateAction<string>>;
+  setIsAnnotating: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsGlobalAnnotating: React.Dispatch<React.SetStateAction<boolean>>;
+  setPointSelection: React.Dispatch<React.SetStateAction<PointSelection | null>>;
+  setStatusMessage: React.Dispatch<React.SetStateAction<string>>;
+}): void {
+  const editingRecord = findEditingAnnotation(steps, annotationHit);
+  if (!editingRecord) {
+    return;
+  }
+
+  setAnnotationType(editingRecord.annotation.type);
+  setEditingAnnotation(annotationHit);
+  setInputValue(annotationEditorText(editingRecord.annotation));
+  setIsGlobalAnnotating(false);
+  setIsAnnotating(true);
+  setPointSelection(null);
+  setStatusMessage("");
 }
 
 function beginAnnotation(

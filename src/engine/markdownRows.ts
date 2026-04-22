@@ -221,6 +221,7 @@ function addAnnotationRows({
       rows.push({
         key: `step-${step.id}-annotation-${annotationIndex}-${chunkIndex}`,
         stepIndex,
+        annotationId: annotation.id,
         role: "annotation",
         segments: [
           { text: `${prefixPadding}  ` },

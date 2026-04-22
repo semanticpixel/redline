@@ -19,6 +19,7 @@ export type RenderedRow = {
   key: string;
   segments: Segment[];
   stepIndex?: number;
+  annotationId?: string;
   role?: "content" | "annotation" | "spacer";
 };
 
