@@ -2,27 +2,9 @@
 
 Terminal-native plan annotator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Review, select, and redline AI-generated plans without leaving your terminal.
 
-```text
-▌ redline - plan review
-Plan: Migrate clima-web from Yarn 4 to pnpm
-────────────────────────────────────────────────────────
- 1   # Plan: Migrate clima-web from Yarn 4 to pnpm
+![Redline plan review demo](assets/redline-demo.gif)
 
- 2   Context
-
-     The app currently uses a custom auth system. We need to migrate
-     to OAuth 2.0 while keeping existing sessions compatible.
-
- 3   Phase 1: Database Schema Changes
-
- 4   1. Create auth_providers table
-
-     Store provider configuration for Google, GitHub, and Microsoft.
-────────────────────────────────────────────────────────
-Drag select text to annotate
-wheel/Page scroll  drag/Shift-click select  c comment  ? question  d delete
-u undo  Esc clear  Enter approve/send feedback  q quit
-```
+[Watch the Redline demo GIF](assets/redline-demo.gif)
 
 ## Why
 
